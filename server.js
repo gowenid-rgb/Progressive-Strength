@@ -1,13 +1,13 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
+const { GoogleGenAI } = require('@google/genai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize Gemini (New SDK)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -50,10 +50,12 @@ Schema requirement:
   ]
 }`;
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+        const response = await ai.models.generateContent({
+            model: 'gemini-1.5-flash',
+            contents: prompt
+        });
 
-        const result = await model.generateContent(prompt);
-        let textResult = result.response.text();
+        let textResult = response.text;
         
         // Strip markdown if the AI accidentally includes it
         if (textResult.startsWith('\`\`\`json')) {

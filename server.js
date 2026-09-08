@@ -72,6 +72,65 @@ Schema requirement:
     }
 });
 
+// Endpoint to recalibrate an existing workout plan
+app.post('/api/recalibrate-plan', async (req, res) => {
+    try {
+        const { currentPlan, feedback } = req.body;
+
+        if (!process.env.GEMINI_API_KEY) {
+            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        }
+
+        const prompt = `You are an expert AI strength and conditioning coach.
+
+Here is the user's current 1-week workout plan:
+${JSON.stringify(currentPlan, null, 2)}
+
+The user provided the following feedback/request for changes:
+"${feedback}"
+
+Adjust the current plan according to the feedback while maintaining the exact same JSON schema. 
+IMPORTANT: You MUST return the plan STRICTLY as a raw JSON object. Do not include markdown formatting, do not include \`\`\`json blocks. Just the raw JSON object.
+Schema requirement:
+{
+  "planName": "String",
+  "week": 1,
+  "days": [
+    {
+      "dayName": "String",
+      "exercises": [
+        {
+          "name": "String",
+          "sets": 3,
+          "reps": "String"
+        }
+      ]
+    }
+  ]
+}`;
+
+        const response = await ai.interactions.create({
+            model: 'gemini-3.8-flash',
+            input: prompt
+        });
+
+        let textResult = response.outputText || response.output_text || response.text;
+        
+        // Strip markdown if the AI accidentally includes it
+        if (textResult.startsWith('\`\`\`json')) {
+            textResult = textResult.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '');
+        }
+
+        const updatedPlan = JSON.parse(textResult.trim());
+        
+        res.json(updatedPlan);
+
+    } catch (error) {
+        console.error('Error recalibrating plan:', error);
+        res.status(500).json({ error: error.message || 'Failed to recalibrate plan' });
+    }
+});
+
 // Endpoint to list available models for debugging
 app.get('/api/models', (req, res) => {
     const https = require('https');

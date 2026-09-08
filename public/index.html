@@ -187,17 +187,17 @@
             <div class="p-6 flex-1 flex flex-col">
                 <p class="text-sm text-textMuted mb-6 leading-relaxed">Describe what needs to change. The AI will recalibrate your upcoming sessions instantly.</p>
                 
-                <textarea class="w-full flex-1 bg-surface border border-borderSubtle rounded-3xl p-6 text-white text-base focus:outline-none focus:border-textMuted resize-none transition-colors" placeholder="E.g., 'My lower back is a bit tight, swap barbell squats for something gentler today'"></textarea>
+                <textarea id="input-adjust" class="w-full flex-1 bg-surface border border-borderSubtle rounded-3xl p-6 text-white text-base focus:outline-none focus:border-textMuted resize-none transition-colors" placeholder="E.g., 'My lower back is a bit tight, swap barbell squats for something gentler today'"></textarea>
 
                 <div class="mt-6 flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
-                    <button class="shrink-0 bg-surface border border-borderSubtle px-4 py-2 rounded-full text-xs font-semibold text-textMain hover:bg-surfaceElevated transition-colors">Gentler on back</button>
-                    <button class="shrink-0 bg-surface border border-borderSubtle px-4 py-2 rounded-full text-xs font-semibold text-textMain hover:bg-surfaceElevated transition-colors">More core</button>
-                    <button class="shrink-0 bg-surface border border-borderSubtle px-4 py-2 rounded-full text-xs font-semibold text-textMain hover:bg-surfaceElevated transition-colors">Short on time</button>
+                    <button onclick="appendAdjustText('Gentler on back')" class="shrink-0 bg-surface border border-borderSubtle px-4 py-2 rounded-full text-xs font-semibold text-textMain hover:bg-surfaceElevated transition-colors">Gentler on back</button>
+                    <button onclick="appendAdjustText('More core focus')" class="shrink-0 bg-surface border border-borderSubtle px-4 py-2 rounded-full text-xs font-semibold text-textMain hover:bg-surfaceElevated transition-colors">More core focus</button>
+                    <button onclick="appendAdjustText('Short on time')" class="shrink-0 bg-surface border border-borderSubtle px-4 py-2 rounded-full text-xs font-semibold text-textMain hover:bg-surfaceElevated transition-colors">Short on time</button>
                 </div>
             </div>
             <div class="p-6 absolute bottom-0 left-0 w-full bg-gradient-to-t from-background via-background to-transparent pt-12">
-                <button onclick="alert('Recalibrating...'); nav('screen-plan', 'nav-plan');" class="w-full bg-white text-black py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
-                    Recalibrate Plan
+                <button id="btn-recalibrate" onclick="recalibratePlan()" class="w-full bg-white text-black py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
+                    <span>Recalibrate Plan</span>
                 </button>
             </div>
         </div>
@@ -315,6 +315,8 @@
     </div>
 
     <script>
+        let currentWorkoutPlan = null;
+
         function nav(screenId, navBtnId = null) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.getElementById(screenId).classList.add('active');
@@ -352,6 +354,47 @@
             activeBtn.classList.add('bg-white', 'text-black', 'shadow-sm');
         }
 
+        function renderPlan(plan) {
+            // Update Title and Week
+            document.getElementById('plan-title').innerText = plan.planName || document.getElementById('input-goal').value;
+            document.getElementById('plan-week').innerText = 'Week ' + (plan.week || 1);
+
+            // Build Days HTML
+            const container = document.getElementById('plan-days-container');
+            container.innerHTML = ''; // Clear container
+
+            if (plan.days && Array.isArray(plan.days)) {
+                plan.days.forEach((day, index) => {
+                    let exercisesHtml = '';
+                    if (day.exercises && Array.isArray(day.exercises)) {
+                        day.exercises.forEach(ex => {
+                            exercisesHtml += `
+                            <div class="flex justify-between items-center">
+                                <span class="text-textMain font-medium">${ex.name}</span>
+                                <span>${ex.sets} × ${ex.reps}</span>
+                            </div>`;
+                        });
+                    }
+
+                    const dayHtml = `
+                    <div class="bg-surface p-6 rounded-3xl border border-borderSubtle">
+                        <div class="flex justify-between items-center mb-6">
+                            <div>
+                                <span class="text-[10px] font-bold text-white bg-surfaceElevated px-2.5 py-1 rounded-full uppercase tracking-widest border border-borderSubtle">Day ${index + 1}</span>
+                                <h3 class="font-semibold text-lg mt-3 text-white tracking-tight">${day.dayName || 'Workout'}</h3>
+                            </div>
+                            <button onclick="nav('screen-active-workout')" class="bg-white text-black text-sm font-semibold px-5 py-2 rounded-full hover:bg-gray-200 transition-colors">Start</button>
+                        </div>
+                        <div class="space-y-3 text-sm text-textMuted">
+                            ${exercisesHtml}
+                        </div>
+                    </div>`;
+                    
+                    container.innerHTML += dayHtml;
+                });
+            }
+        }
+
         async function generatePlan() {
             const btn = document.getElementById('btn-generate');
             const originalText = btn.innerHTML;
@@ -381,46 +424,62 @@
                 
                 const plan = await response.json();
                 console.log("GENERATED PLAN:", plan);
+                currentWorkoutPlan = plan; // Store state
+
+                renderPlan(plan);
+                nav('screen-plan', 'nav-plan');
+            } catch (err) {
+                console.error(err);
+                alert("Network error.");
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // Adjust Logic
+        function appendAdjustText(text) {
+            const ta = document.getElementById('input-adjust');
+            if (ta.value) ta.value += ', ';
+            ta.value += text;
+        }
+
+        async function recalibratePlan() {
+            if (!currentWorkoutPlan) {
+                alert("No active plan to recalibrate.");
+                return;
+            }
+
+            const feedback = document.getElementById('input-adjust').value;
+            if (!feedback.trim()) {
+                alert("Please provide feedback.");
+                return;
+            }
+
+            const btn = document.getElementById('btn-recalibrate');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-black" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Recalibrating...</span>`;
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/api/recalibrate-plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback })
+                });
                 
-                // Update Title and Week
-                document.getElementById('plan-title').innerText = plan.planName || document.getElementById('input-goal').value;
-                document.getElementById('plan-week').innerText = 'Week ' + (plan.week || 1);
-
-                // Build Days HTML
-                const container = document.getElementById('plan-days-container');
-                container.innerHTML = ''; // Clear container
-
-                if (plan.days && Array.isArray(plan.days)) {
-                    plan.days.forEach((day, index) => {
-                        let exercisesHtml = '';
-                        if (day.exercises && Array.isArray(day.exercises)) {
-                            day.exercises.forEach(ex => {
-                                exercisesHtml += `
-                                <div class="flex justify-between items-center">
-                                    <span class="text-textMain font-medium">${ex.name}</span>
-                                    <span>${ex.sets} × ${ex.reps}</span>
-                                </div>`;
-                            });
-                        }
-
-                        const dayHtml = `
-                        <div class="bg-surface p-6 rounded-3xl border border-borderSubtle">
-                            <div class="flex justify-between items-center mb-6">
-                                <div>
-                                    <span class="text-[10px] font-bold text-white bg-surfaceElevated px-2.5 py-1 rounded-full uppercase tracking-widest border border-borderSubtle">Day ${index + 1}</span>
-                                    <h3 class="font-semibold text-lg mt-3 text-white tracking-tight">${day.dayName || 'Workout'}</h3>
-                                </div>
-                                <button onclick="nav('screen-active-workout')" class="bg-white text-black text-sm font-semibold px-5 py-2 rounded-full hover:bg-gray-200 transition-colors">Start</button>
-                            </div>
-                            <div class="space-y-3 text-sm text-textMuted">
-                                ${exercisesHtml}
-                            </div>
-                        </div>`;
-                        
-                        container.innerHTML += dayHtml;
-                    });
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert("Error: " + (error.error || "Failed to recalibrate plan."));
+                    return;
                 }
                 
+                const plan = await response.json();
+                console.log("RECALIBRATED PLAN:", plan);
+                currentWorkoutPlan = plan; // Update state
+
+                renderPlan(plan);
+                document.getElementById('input-adjust').value = ''; // Clear input
                 nav('screen-plan', 'nav-plan');
             } catch (err) {
                 console.error(err);

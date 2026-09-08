@@ -71,15 +71,21 @@ Schema requirement:
 });
 
 // Endpoint to list available models for debugging
-app.get('/api/models', async (req, res) => {
-    try {
-        const fetch = (await import('node-fetch')).default || globalThis.fetch;
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`);
-        const data = await response.json();
-        res.json(data);
-    } catch (err) {
+app.get('/api/models', (req, res) => {
+    const https = require('https');
+    https.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`, (apiRes) => {
+        let data = '';
+        apiRes.on('data', (chunk) => { data += chunk; });
+        apiRes.on('end', () => {
+            try {
+                res.json(JSON.parse(data));
+            } catch (err) {
+                res.status(500).json({ error: 'Failed to parse JSON' });
+            }
+        });
+    }).on("error", (err) => {
         res.status(500).json({ error: err.message });
-    }
+    });
 });
 
 app.get('*', (req, res) => {

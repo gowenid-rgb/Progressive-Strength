@@ -1,15 +1,13 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const { OpenAI } = require('openai');
+const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -19,8 +17,8 @@ app.post('/api/generate-plan', async (req, res) => {
     try {
         const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails } = req.body;
 
-        if (!process.env.OPENAI_API_KEY) {
-            return res.status(500).json({ error: 'OpenAI API Key is missing on the server.' });
+        if (!process.env.GEMINI_API_KEY) {
+            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
         }
 
         const prompt = `You are an expert AI strength and conditioning coach.
@@ -32,31 +30,48 @@ User Profile:
 - Training Days per Week: 
 - Extra Details: 
 
-Create a highly effective 1-week workout plan tailored to this user. Return the plan STRICTLY as a JSON object with this schema:
-{
-  "planName": "String",
-  "week": 1,
-  "days": [
-    {
-      "dayName": "String (e.g., Day 1 - Upper Body Push)",
-      "exercises": [
-        {
-          "name": "String",
-          "sets": 3,
-          "reps": "String (e.g., 8-10)"
-        }
-      ]
-    }
-  ]
-}`;
+Create a highly effective 1-week workout plan tailored to this user. Return the plan STRICTLY as a JSON object matching the requested schema.`;
 
-        const response = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
-            messages: [{ role: 'user', content: prompt }],
-            response_format: { type: 'json_object' },
+        const schema = {
+            type: SchemaType.OBJECT,
+            properties: {
+                planName: { type: SchemaType.STRING },
+                week: { type: SchemaType.INTEGER },
+                days: {
+                    type: SchemaType.ARRAY,
+                    items: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                            dayName: { type: SchemaType.STRING, description: "e.g., Day 1 - Upper Body Push" },
+                            exercises: {
+                                type: SchemaType.ARRAY,
+                                items: {
+                                    type: SchemaType.OBJECT,
+                                    properties: {
+                                        name: { type: SchemaType.STRING },
+                                        sets: { type: SchemaType.INTEGER },
+                                        reps: { type: SchemaType.STRING, description: "e.g., 8-10" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            required: ["planName", "week", "days"]
+        };
+
+        const model = genAI.getGenerativeModel({
+            model: 'gemini-1.5-pro',
+            generationConfig: {
+                responseMimeType: 'application/json',
+                responseSchema: schema,
+            }
         });
 
-        const plan = JSON.parse(response.choices[0].message.content);
+        const result = await model.generateContent(prompt);
+        const plan = JSON.parse(result.response.text());
+        
         res.json(plan);
 
     } catch (error) {

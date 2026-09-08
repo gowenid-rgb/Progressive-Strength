@@ -76,7 +76,7 @@ Create a highly effective 1-week workout plan tailored to this user. Return the 
 
     } catch (error) {
         console.error('Error generating plan:', error);
-        res.status(500).json({ error: 'Failed to generate plan' });
+        res.status(500).json({ error: error.message || 'Failed to generate plan' });
     }
 });
 

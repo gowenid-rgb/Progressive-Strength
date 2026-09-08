@@ -64,7 +64,7 @@
                     <div class="group">
                         <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">Primary Goal</label>
                         <div class="relative">
-                            <select class="w-full p-4 bg-surface border border-borderSubtle rounded-2xl appearance-none focus:outline-none focus:border-textMuted text-textMain transition-colors cursor-pointer">
+                            <select id="input-goal" class="w-full p-4 bg-surface border border-borderSubtle rounded-2xl appearance-none focus:outline-none focus:border-textMuted text-textMain transition-colors cursor-pointer">
                                 <option>Hypertrophy (Muscle Gain)</option>
                                 <option>Absolute Strength</option>
                                 <option>Fat Loss & Toning</option>
@@ -76,17 +76,18 @@
 
                     <div>
                         <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">Experience Level</label>
-                        <div class="flex p-1 bg-surface border border-borderSubtle rounded-2xl">
-                            <button class="flex-1 py-3 bg-white text-black rounded-xl text-sm font-semibold shadow-sm transition-transform active:scale-95">Beginner</button>
-                            <button class="flex-1 py-3 text-textMuted rounded-xl text-sm font-medium hover:text-white transition-colors">Intermediate</button>
-                            <button class="flex-1 py-3 text-textMuted rounded-xl text-sm font-medium hover:text-white transition-colors">Advanced</button>
+                        <div class="flex p-1 bg-surface border border-borderSubtle rounded-2xl" id="input-experience-group">
+                            <button type="button" onclick="setExperience('Beginner')" id="btn-exp-Beginner" class="exp-btn flex-1 py-3 bg-white text-black rounded-xl text-sm font-semibold shadow-sm transition-transform active:scale-95">Beginner</button>
+                            <button type="button" onclick="setExperience('Intermediate')" id="btn-exp-Intermediate" class="exp-btn flex-1 py-3 text-textMuted rounded-xl text-sm font-medium hover:text-white transition-colors">Intermediate</button>
+                            <button type="button" onclick="setExperience('Advanced')" id="btn-exp-Advanced" class="exp-btn flex-1 py-3 text-textMuted rounded-xl text-sm font-medium hover:text-white transition-colors">Advanced</button>
                         </div>
+                        <input type="hidden" id="input-experience" value="Beginner">
                     </div>
 
                     <div>
                         <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">Available Equipment</label>
                         <div class="relative">
-                            <select class="w-full p-4 bg-surface border border-borderSubtle rounded-2xl appearance-none focus:outline-none focus:border-textMuted text-textMain transition-colors cursor-pointer">
+                            <select id="input-equipment" class="w-full p-4 bg-surface border border-borderSubtle rounded-2xl appearance-none focus:outline-none focus:border-textMuted text-textMain transition-colors cursor-pointer">
                                 <option>Full Commercial Gym</option>
                                 <option>Home Gym (Barbell + Rack)</option>
                                 <option>Dumbbells Only</option>
@@ -101,13 +102,18 @@
                             <span>Training Days</span>
                             <span id="days-val" class="text-white">4 Days</span>
                         </label>
-                        <input type="range" min="2" max="6" value="4" class="w-full" oninput="document.getElementById('days-val').innerText = this.value + ' Days'">
+                        <input id="input-days" type="range" min="2" max="6" value="4" class="w-full" oninput="document.getElementById('days-val').innerText = this.value + ' Days'">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">Additional Details (Optional)</label>
+                        <textarea id="input-details" class="w-full h-24 bg-surface border border-borderSubtle rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none" placeholder="Describe the types of workouts you want, specific goals, injuries, etc."></textarea>
                     </div>
                 </div>
             </div>
 
             <div class="mt-auto p-6 absolute bottom-0 left-0 w-full bg-gradient-to-t from-background via-background to-transparent pt-12">
-                <button onclick="nav('screen-plan', 'nav-plan')" class="w-full bg-white text-black py-4 rounded-2xl font-semibold text-[15px] flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
+                <button id="btn-generate" onclick="generatePlan()" class="w-full bg-white text-black py-4 rounded-2xl font-semibold text-[15px] flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
                     <span>Generate Program</span>
                 </button>
             </div>
@@ -360,6 +366,60 @@
                 const activeBtn = document.getElementById(navBtnId);
                 activeBtn.classList.remove('text-textMuted');
                 activeBtn.classList.add('text-white');
+            }
+        }
+
+        // Setup Form Logic
+        function setExperience(level) {
+            document.getElementById('input-experience').value = level;
+            const btns = document.querySelectorAll('.exp-btn');
+            btns.forEach(btn => {
+                btn.classList.remove('bg-white', 'text-black', 'shadow-sm');
+                btn.classList.add('text-textMuted');
+            });
+            const activeBtn = document.getElementById('btn-exp-' + level);
+            activeBtn.classList.remove('text-textMuted');
+            activeBtn.classList.add('bg-white', 'text-black', 'shadow-sm');
+        }
+
+        async function generatePlan() {
+            const btn = document.getElementById('btn-generate');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-black" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Generating...</span>`;
+            btn.disabled = true;
+
+            const payload = {
+                primaryGoal: document.getElementById('input-goal').value,
+                experienceLevel: document.getElementById('input-experience').value,
+                equipment: document.getElementById('input-equipment').value,
+                trainingDays: document.getElementById('input-days').value,
+                extraDetails: document.getElementById('input-details').value
+            };
+
+            try {
+                const response = await fetch('/api/generate-plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert("Error: " + (error.error || "Failed to generate plan."));
+                    return;
+                }
+                
+                const plan = await response.json();
+                console.log("GENERATED PLAN:", plan);
+                alert("Plan generated successfully! Check console for JSON. (Dynamic rendering coming next)");
+                
+                nav('screen-plan', 'nav-plan');
+            } catch (err) {
+                console.error(err);
+                alert("Network error.");
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         }
     </script>

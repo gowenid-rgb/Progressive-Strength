@@ -24,53 +24,43 @@ app.post('/api/generate-plan', async (req, res) => {
         const prompt = `You are an expert AI strength and conditioning coach.
 
 User Profile:
-- Goal: 
-- Experience: 
-- Equipment: 
-- Training Days per Week: 
-- Extra Details: 
+- Goal: ${primaryGoal}
+- Experience: ${experienceLevel}
+- Equipment: ${equipment}
+- Training Days per Week: ${trainingDays}
+- Extra Details: ${extraDetails || 'None'}
 
-Create a highly effective 1-week workout plan tailored to this user. Return the plan STRICTLY as a JSON object matching the requested schema.`;
+Create a highly effective 1-week workout plan tailored to this user. 
+IMPORTANT: You MUST return the plan STRICTLY as a raw JSON object. Do not include markdown formatting, do not include \`\`\`json blocks. Just the raw JSON object.
+Schema requirement:
+{
+  "planName": "String",
+  "week": 1,
+  "days": [
+    {
+      "dayName": "String",
+      "exercises": [
+        {
+          "name": "String",
+          "sets": 3,
+          "reps": "String"
+        }
+      ]
+    }
+  ]
+}`;
 
-        const schema = {
-            type: SchemaType.OBJECT,
-            properties: {
-                planName: { type: SchemaType.STRING },
-                week: { type: SchemaType.INTEGER },
-                days: {
-                    type: SchemaType.ARRAY,
-                    items: {
-                        type: SchemaType.OBJECT,
-                        properties: {
-                            dayName: { type: SchemaType.STRING, description: "e.g., Day 1 - Upper Body Push" },
-                            exercises: {
-                                type: SchemaType.ARRAY,
-                                items: {
-                                    type: SchemaType.OBJECT,
-                                    properties: {
-                                        name: { type: SchemaType.STRING },
-                                        sets: { type: SchemaType.INTEGER },
-                                        reps: { type: SchemaType.STRING, description: "e.g., 8-10" }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            required: ["planName", "week", "days"]
-        };
-
-        const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-flash',
-            generationConfig: {
-                responseMimeType: 'application/json',
-                responseSchema: schema,
-            }
-        });
+        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
         const result = await model.generateContent(prompt);
-        const plan = JSON.parse(result.response.text());
+        let textResult = result.response.text();
+        
+        // Strip markdown if the AI accidentally includes it
+        if (textResult.startsWith('\`\`\`json')) {
+            textResult = textResult.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '');
+        }
+
+        const plan = JSON.parse(textResult.trim());
         
         res.json(plan);
 

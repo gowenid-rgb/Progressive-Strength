@@ -141,40 +141,14 @@
             <!-- Header -->
             <div class="p-6 sticky top-0 z-20 bg-background/80 backdrop-blur-md border-b border-borderSubtle flex justify-between items-center">
                 <div>
-                    <h2 class="font-semibold text-xl tracking-tight text-white">Upper Body Push</h2>
-                    <span class="text-xs text-textMuted font-mono mt-1 block">00:14:32</span>
+                    <h2 id="active-workout-title" class="font-semibold text-xl tracking-tight text-white">Workout</h2>
+                    <span id="active-workout-timer" class="text-xs text-textMuted font-mono mt-1 block">In Progress</span>
                 </div>
-                <button onclick="nav('screen-plan', 'nav-plan')" class="text-sm font-medium text-textMuted hover:text-white transition-colors">Finish</button>
+                <button onclick="finishWorkout()" class="text-sm font-medium text-textMuted hover:text-white transition-colors">Finish</button>
             </div>
 
-            <div class="p-4 space-y-4">
-                <!-- Exercise 1 -->
-                <div class="bg-surface rounded-[24px] border border-borderSubtle overflow-hidden">
-                    <div class="p-5 flex justify-between items-start">
-                        <div>
-                            <h3 class="font-semibold text-lg text-white tracking-tight">Barbell Bench Press</h3>
-                            <p class="text-[11px] text-textMuted uppercase tracking-widest mt-1 font-semibold">Goal: 3 × 8-10 reps</p>
-                        </div>
-                    </div>
-                    
-                    <div class="px-5 pb-5">
-                        <div class="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-widest text-textMuted mb-3 px-1 text-center font-semibold">
-                            <div class="col-span-1">Set</div>
-                            <div class="col-span-3 text-left">Prev</div>
-                            <div class="col-span-3">Lbs</div>
-                            <div class="col-span-3">Reps</div>
-                            <div class="col-span-2"></div>
-                        </div>
-                        <div class="grid grid-cols-12 gap-2 mb-3 items-center text-center bg-surfaceElevated p-2 rounded-xl border border-borderSubtle">
-                            <div class="col-span-1 text-xs text-white font-medium">1</div>
-                            <div class="col-span-3 text-xs text-textMuted text-left">185×10</div>
-                            <div class="col-span-3"><input type="number" placeholder="190" class="w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors"></div>
-                            <div class="col-span-3"><input type="number" placeholder="8" class="w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors"></div>
-                            <div class="col-span-2 flex justify-center"><div class="w-6 h-6 rounded-full border border-textMuted hover:border-white cursor-pointer transition-colors flex items-center justify-center text-transparent hover:text-white active:bg-white active:text-black">✓</div></div>
-                        </div>
-                        <button class="mt-4 text-xs font-semibold text-textMain w-full text-center py-3 bg-surfaceElevated rounded-xl hover:bg-[#222] transition-colors">Add Set</button>
-                    </div>
-                </div>
+            <div id="active-workout-exercises" class="p-4 space-y-4">
+                <!-- Dynamic active workout blocks will be injected here -->
             </div>
         </div>
 
@@ -316,6 +290,9 @@
 
     <script>
         let currentWorkoutPlan = null;
+        let activeDayIndex = null;
+        let workoutStartTime = null;
+        let workoutTimerInterval = null;
 
         function nav(screenId, navBtnId = null) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -383,7 +360,7 @@
                                 <span class="text-[10px] font-bold text-white bg-surfaceElevated px-2.5 py-1 rounded-full uppercase tracking-widest border border-borderSubtle">Day ${index + 1}</span>
                                 <h3 class="font-semibold text-lg mt-3 text-white tracking-tight">${day.dayName || 'Workout'}</h3>
                             </div>
-                            <button onclick="nav('screen-active-workout')" class="bg-white text-black text-sm font-semibold px-5 py-2 rounded-full hover:bg-gray-200 transition-colors">Start</button>
+                            <button onclick="startWorkout(${index})" class="bg-white text-black text-sm font-semibold px-5 py-2 rounded-full hover:bg-gray-200 transition-colors">Start</button>
                         </div>
                         <div class="space-y-3 text-sm text-textMuted">
                             ${exercisesHtml}
@@ -393,6 +370,121 @@
                     container.innerHTML += dayHtml;
                 });
             }
+        }
+
+        function startWorkout(dayIndex) {
+            activeDayIndex = dayIndex;
+            const day = currentWorkoutPlan.days[dayIndex];
+            
+            document.getElementById('active-workout-title').innerText = day.dayName || `Day ${dayIndex + 1}`;
+            const container = document.getElementById('active-workout-exercises');
+            container.innerHTML = '';
+            
+            if (day.exercises && Array.isArray(day.exercises)) {
+                day.exercises.forEach((ex, exIndex) => {
+                    let setsHtml = '';
+                    const numSets = parseInt(ex.sets) || 3;
+                    for (let s = 1; s <= numSets; s++) {
+                        setsHtml += `
+                        <div class="grid grid-cols-12 gap-2 mb-3 items-center text-center bg-surfaceElevated p-2 rounded-xl border border-borderSubtle set-row">
+                            <div class="col-span-1 text-xs text-white font-medium">${s}</div>
+                            <div class="col-span-3 text-xs text-textMuted text-left">-</div>
+                            <div class="col-span-3"><input type="number" data-ex="${exIndex}" data-set="${s}" class="workout-weight w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="lbs"></div>
+                            <div class="col-span-3"><input type="number" data-ex="${exIndex}" data-set="${s}" class="workout-reps w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${ex.reps}"></div>
+                            <div class="col-span-2 flex justify-center">
+                                <div onclick="toggleSet(this)" class="w-6 h-6 rounded-full border border-textMuted hover:border-white cursor-pointer transition-colors flex items-center justify-center text-transparent">✓</div>
+                            </div>
+                        </div>`;
+                    }
+
+                    container.innerHTML += `
+                    <div class="bg-surface rounded-[24px] border border-borderSubtle overflow-hidden">
+                        <div class="p-5 flex justify-between items-start">
+                            <div>
+                                <h3 class="font-semibold text-lg text-white tracking-tight">${ex.name}</h3>
+                                <p class="text-[11px] text-textMuted uppercase tracking-widest mt-1 font-semibold">Goal: ${ex.sets} × ${ex.reps} reps</p>
+                            </div>
+                        </div>
+                        <div class="px-5 pb-5">
+                            <div class="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-widest text-textMuted mb-3 px-1 text-center font-semibold">
+                                <div class="col-span-1">Set</div>
+                                <div class="col-span-3 text-left">Prev</div>
+                                <div class="col-span-3">Lbs</div>
+                                <div class="col-span-3">Reps</div>
+                                <div class="col-span-2"></div>
+                            </div>
+                            ${setsHtml}
+                        </div>
+                    </div>`;
+                });
+            }
+
+            workoutStartTime = Date.now();
+            if (workoutTimerInterval) clearInterval(workoutTimerInterval);
+            workoutTimerInterval = setInterval(() => {
+                const diff = Math.floor((Date.now() - workoutStartTime) / 1000);
+                const h = String(Math.floor(diff / 3600)).padStart(2, '0');
+                const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+                const s = String(diff % 60).padStart(2, '0');
+                document.getElementById('active-workout-timer').innerText = `${h}:${m}:${s}`;
+            }, 1000);
+
+            nav('screen-active-workout');
+        }
+
+        function toggleSet(el) {
+            if (el.classList.contains('text-white')) {
+                el.classList.remove('text-white', 'bg-white');
+                el.classList.add('text-transparent');
+                el.style.color = 'transparent';
+                el.parentElement.parentElement.classList.remove('opacity-50');
+            } else {
+                el.classList.remove('text-transparent');
+                el.classList.add('text-black', 'bg-white');
+                el.style.color = 'black';
+                el.parentElement.parentElement.classList.add('opacity-50');
+            }
+        }
+
+        function finishWorkout() {
+            if (workoutTimerInterval) clearInterval(workoutTimerInterval);
+            
+            const day = currentWorkoutPlan.days[activeDayIndex];
+            const completedExercises = [];
+
+            // Scrape inputs
+            document.querySelectorAll('.workout-weight').forEach(input => {
+                const exIdx = input.getAttribute('data-ex');
+                const setNum = input.getAttribute('data-set');
+                const weight = input.value;
+                const reps = document.querySelector(`.workout-reps[data-ex="${exIdx}"][data-set="${setNum}"]`).value;
+
+                if (!completedExercises[exIdx]) {
+                    completedExercises[exIdx] = { name: day.exercises[exIdx].name, sets: [] };
+                }
+                
+                completedExercises[exIdx].sets.push({
+                    set: setNum,
+                    weight: weight || 0,
+                    reps: reps || 0
+                });
+            });
+
+            const workoutLog = {
+                date: new Date().toISOString(),
+                planName: currentWorkoutPlan.planName,
+                dayName: day.dayName,
+                durationSeconds: Math.floor((Date.now() - workoutStartTime) / 1000),
+                exercises: completedExercises
+            };
+
+            let journal = JSON.parse(localStorage.getItem('workoutJournal') || '[]');
+            journal.push(workoutLog);
+            localStorage.setItem('workoutJournal', JSON.stringify(journal));
+
+            console.log("WORKOUT SAVED:", workoutLog);
+            alert("Workout finished and saved to journal!");
+            nav('screen-plan', 'nav-plan');
         }
 
         async function generatePlan() {

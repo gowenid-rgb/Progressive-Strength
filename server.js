@@ -50,12 +50,12 @@ Schema requirement:
   ]
 }`;
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt
+        const response = await ai.interactions.create({
+            model: 'gemini-3.8-flash',
+            input: prompt
         });
 
-        let textResult = response.text;
+        let textResult = response.outputText || response.output_text || response.text;
         
         // Strip markdown if the AI accidentally includes it
         if (textResult.startsWith('\`\`\`json')) {

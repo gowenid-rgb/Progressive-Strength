@@ -62,7 +62,7 @@ Create a highly effective 1-week workout plan tailored to this user. Return the 
         };
 
         const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-pro-latest',
+            model: 'gemini-1.5-flash',
             generationConfig: {
                 responseMimeType: 'application/json',
                 responseSchema: schema,

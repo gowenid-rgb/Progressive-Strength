@@ -216,13 +216,13 @@
                             <textarea id="journal-intentions" class="w-full h-28 bg-surface border border-borderSubtle rounded-[20px] p-5 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none"></textarea>
                         </div>
                     </div>
+                    
+                    <div class="mt-8 pt-4 border-t border-borderSubtle">
+                        <button id="btn-submit-journal" onclick="submitJournal()" class="w-full bg-white text-black py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
+                            <span>Save & Recalibrate Plan</span>
+                        </button>
+                    </div>
                 </div>
-            </div>
-
-            <div class="p-6 absolute bottom-0 left-0 w-full bg-gradient-to-t from-background via-background to-transparent pt-12">
-                <button id="btn-submit-journal" onclick="submitJournal()" class="w-full bg-white text-black py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
-                    <span>Save & Recalibrate Plan</span>
-                </button>
             </div>
         </div>
 
@@ -351,7 +351,11 @@
             container.innerHTML = ''; // Clear container
 
             if (plan.days && Array.isArray(plan.days)) {
+                let uncompletedDays = 0;
                 plan.days.forEach((day, index) => {
+                    if (day.completed) return; // Skip rendering completed days
+                    uncompletedDays++;
+
                     let exercisesHtml = '';
                     if (day.exercises && Array.isArray(day.exercises)) {
                         day.exercises.forEach(ex => {
@@ -380,6 +384,15 @@
                     
                     container.innerHTML += dayHtml;
                 });
+                
+                if (uncompletedDays === 0) {
+                    container.innerHTML = `
+                    <div class="bg-surface p-6 rounded-3xl border border-borderSubtle text-center text-textMuted">
+                        <h3 class="text-white font-semibold mb-2">Cycle Complete!</h3>
+                        <p class="text-sm mb-4">You have finished all workouts for this cycle.</p>
+                        <button onclick="nav('screen-journal', 'nav-journal')" class="bg-white text-black px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-200">Go to Journal to Recalibrate</button>
+                    </div>`;
+                }
             }
         }
 
@@ -543,8 +556,11 @@
             journal.push(workoutLog);
             localStorage.setItem('workoutJournal', JSON.stringify(journal));
 
+            day.completed = true;
+
             console.log("WORKOUT SAVED:", workoutLog);
             alert("Workout finished and saved to journal!");
+            renderPlan(currentWorkoutPlan);
             nav('screen-plan', 'nav-plan');
         }
 

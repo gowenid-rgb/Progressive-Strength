@@ -312,7 +312,7 @@
                     const data = await res.json();
                     if (data.currentPlan) {
                         currentWorkoutPlan = typeof data.currentPlan === 'string' ? JSON.parse(data.currentPlan) : data.currentPlan;
-                        localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
+                        localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
                         renderPlan(currentWorkoutPlan);
                         nav('screen-plan', 'nav-plan');
                     } else {
@@ -345,7 +345,7 @@
                 const userData = await userRes.json();
                 if (userData.currentPlan) {
                     currentWorkoutPlan = typeof userData.currentPlan === 'string' ? JSON.parse(userData.currentPlan) : userData.currentPlan;
-                    localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
+                    localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
                     renderPlan(currentWorkoutPlan);
                     nav('screen-plan', 'nav-plan');
                 } else {
@@ -641,7 +641,7 @@
             nav('screen-plan', 'nav-plan');
         }
 
-        function finishWorkout() {
+        async function finishWorkout() {
             if (workoutTimerInterval) clearInterval(workoutTimerInterval);
             
             const day = currentWorkoutPlan.days[activeDayIndex];
@@ -680,7 +680,7 @@
             localStorage.setItem('workoutJournal', JSON.stringify(journal));
 
             day.completed = true;
-            localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
+            localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
 
             console.log("WORKOUT SAVED:", workoutLog);
             await syncData(); alert("Workout finished and saved to journal!");
@@ -720,7 +720,7 @@
                 const plan = await response.json();
                 console.log("GENERATED PLAN:", plan);
                 currentWorkoutPlan = plan; // Store state
-                localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
+                localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
 
                 renderPlan(plan);
                 nav('screen-plan', 'nav-plan');
@@ -782,7 +782,7 @@
                 
                 console.log("RECALIBRATED PLAN:", plan);
                 currentWorkoutPlan = plan; // Update state
-                localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
+                localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
 
                 renderPlan(plan);
                 document.getElementById('input-adjust').value = ''; // Clear input

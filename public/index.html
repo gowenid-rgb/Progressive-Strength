@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Progressive Strength Control</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#000000">
+    <link rel="apple-touch-icon" href="/icon-192.jpg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
@@ -848,7 +851,7 @@
 
                 console.log("RECALIBRATED PLAN FROM JOURNAL:", plan);
                 currentWorkoutPlan = plan; // Update state
-                localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
+                localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
 
                 renderPlan(plan);
                 document.getElementById('journal-energy').value = ''; 
@@ -862,6 +865,16 @@
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
+        }
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(reg => {
+                    console.log('ServiceWorker registered:', reg);
+                }).catch(err => {
+                    console.log('ServiceWorker registration failed:', err);
+                });
+            });
         }
     </script>
 </body>

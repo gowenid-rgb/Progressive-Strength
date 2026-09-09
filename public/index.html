@@ -190,20 +190,20 @@
                     
                     <div class="space-y-6">
                         <div>
-                            <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">How is your energy?</label>
-                            <textarea class="w-full h-28 bg-surface border border-borderSubtle rounded-[20px] p-5 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none"></textarea>
+                            <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">How is your energy? Any pains?</label>
+                            <textarea id="journal-energy" class="w-full h-28 bg-surface border border-borderSubtle rounded-[20px] p-5 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none"></textarea>
                         </div>
                         <div>
                             <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">Intentions for next phase?</label>
-                            <textarea class="w-full h-28 bg-surface border border-borderSubtle rounded-[20px] p-5 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none"></textarea>
+                            <textarea id="journal-intentions" class="w-full h-28 bg-surface border border-borderSubtle rounded-[20px] p-5 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none"></textarea>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="p-6 absolute bottom-0 left-0 w-full bg-gradient-to-t from-background via-background to-transparent pt-12">
-                <button onclick="alert('Generating Phase 2...'); nav('screen-plan', 'nav-plan');" class="w-full bg-white text-black py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
-                    Generate Phase 2
+                <button id="btn-submit-journal" onclick="submitJournal()" class="w-full bg-white text-black py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
+                    <span>Save & Recalibrate Plan</span>
                 </button>
             </div>
         </div>
@@ -362,6 +362,7 @@
                             </div>
                             <button onclick="startWorkout(${index})" class="bg-white text-black text-sm font-semibold px-5 py-2 rounded-full hover:bg-gray-200 transition-colors">Start</button>
                         </div>
+                        ${day.workoutIntro ? `<p class="text-xs text-textMuted mb-4 italic">"${day.workoutIntro}"</p>` : ''}
                         <div class="space-y-3 text-sm text-textMuted">
                             ${exercisesHtml}
                         </div>
@@ -380,16 +381,22 @@
             const container = document.getElementById('active-workout-exercises');
             container.innerHTML = '';
             
+            if (day.workoutIntro) {
+                container.innerHTML += `<div class="bg-surfaceElevated p-4 rounded-xl border border-borderSubtle mb-4 text-sm text-white italic">" ${day.workoutIntro} "</div>`;
+            }
+
             if (day.exercises && Array.isArray(day.exercises)) {
                 day.exercises.forEach((ex, exIndex) => {
                     let setsHtml = '';
                     const numSets = parseInt(ex.sets) || 3;
+                    const defaultWeight = ex.suggestedWeight || 'lbs';
+
                     for (let s = 1; s <= numSets; s++) {
                         setsHtml += `
                         <div class="grid grid-cols-12 gap-2 mb-3 items-center text-center bg-surfaceElevated p-2 rounded-xl border border-borderSubtle set-row">
                             <div class="col-span-1 text-xs text-white font-medium">${s}</div>
                             <div class="col-span-3 text-xs text-textMuted text-left">-</div>
-                            <div class="col-span-3"><input type="number" data-ex="${exIndex}" data-set="${s}" class="workout-weight w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="lbs"></div>
+                            <div class="col-span-3"><input type="number" data-ex="${exIndex}" data-set="${s}" class="workout-weight w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${defaultWeight}"></div>
                             <div class="col-span-3"><input type="number" data-ex="${exIndex}" data-set="${s}" class="workout-reps w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${ex.reps}"></div>
                             <div class="col-span-2 flex justify-center">
                                 <div onclick="toggleSet(this)" class="w-6 h-6 rounded-full border border-textMuted hover:border-white cursor-pointer transition-colors flex items-center justify-center text-transparent">✓</div>
@@ -498,7 +505,9 @@
                 experienceLevel: document.getElementById('input-experience').value,
                 equipment: document.getElementById('input-equipment').value,
                 trainingDays: document.getElementById('input-days').value,
-                extraDetails: document.getElementById('input-details').value
+                extraDetails: document.getElementById('input-details').value,
+                workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]'),
+                journalEntries: JSON.parse(localStorage.getItem('journalEntries') || '[]')
             };
 
             try {
@@ -557,7 +566,7 @@
                 const response = await fetch('/api/recalibrate-plan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback })
+                    body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback, workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]') })
                 });
                 
                 if (!response.ok) {
@@ -572,6 +581,58 @@
 
                 renderPlan(plan);
                 document.getElementById('input-adjust').value = ''; // Clear input
+                nav('screen-plan', 'nav-plan');
+            } catch (err) {
+                console.error(err);
+                alert("Network error.");
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        async function submitJournal() {
+            if (!currentWorkoutPlan) {
+                alert("You need an active plan to recalibrate based on journal entries.");
+                return;
+            }
+
+            const energy = document.getElementById('journal-energy').value;
+            const intentions = document.getElementById('journal-intentions').value;
+            const combinedFeedback = `Energy/Pains: ${energy}. Intentions: ${intentions}.`;
+
+            // Save to localStorage
+            let savedEntries = JSON.parse(localStorage.getItem('journalEntries') || '[]');
+            savedEntries.push({ date: new Date().toISOString(), entry: combinedFeedback });
+            localStorage.setItem('journalEntries', JSON.stringify(savedEntries));
+
+            const btn = document.getElementById('btn-submit-journal');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-black" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Recalibrating Plan...</span>`;
+            btn.disabled = true;
+
+            try {
+                // We use the same recalibrate endpoint but pass the combined journal entry as feedback
+                const response = await fetch('/api/recalibrate-plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback: combinedFeedback, workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]') })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert("Error: " + (error.error || "Failed to recalibrate plan."));
+                    return;
+                }
+                
+                const plan = await response.json();
+                console.log("RECALIBRATED PLAN FROM JOURNAL:", plan);
+                currentWorkoutPlan = plan; // Update state
+
+                renderPlan(plan);
+                document.getElementById('journal-energy').value = ''; 
+                document.getElementById('journal-intentions').value = ''; 
+                alert("Journal saved and plan updated!");
                 nav('screen-plan', 'nav-plan');
             } catch (err) {
                 console.error(err);

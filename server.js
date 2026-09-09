@@ -15,7 +15,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Endpoint to generate a workout plan
 app.post('/api/generate-plan', async (req, res) => {
     try {
-        const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails } = req.body;
+        const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails, workoutHistory, journalEntries } = req.body;
 
         if (!process.env.GEMINI_API_KEY) {
             return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
@@ -30,7 +30,18 @@ User Profile:
 - Training Days per Week: ${trainingDays}
 - Extra Details: ${extraDetails || 'None'}
 
+Past Performance History (use to calculate suggested weights):
+${workoutHistory ? JSON.stringify(workoutHistory) : 'None'}
+
+Recent Journal Feedback (use to adjust exercises or cycle phase):
+${journalEntries ? JSON.stringify(journalEntries) : 'None'}
+
 Create a highly effective 1-week workout plan tailored to this user. 
+Smart Programming Rules:
+1. Warmups and mobility work should NOT have a suggested weight, and should have appropriate reps (e.g. 15-20 or time-based).
+2. For main working sets, if the user has past performance history for a movement, suggest a challenging but realistic weight. If it's a new movement, leave suggestedWeight blank or null.
+3. Incorporate any feedback from their journal. If they mention an injury or fatigue, adjust the intensity, remove offending exercises, or program a deload week.
+
 IMPORTANT: You MUST return the plan STRICTLY as a raw JSON object. Do not include markdown formatting, do not include \`\`\`json blocks. Just the raw JSON object.
 Schema requirement:
 {
@@ -39,11 +50,13 @@ Schema requirement:
   "days": [
     {
       "dayName": "String",
+      "workoutIntro": "String (A short motivational/instructional coaching blurb for the day, explaining the stimulus or goal)",
       "exercises": [
         {
           "name": "String",
           "sets": 3,
-          "reps": "String"
+          "reps": "String",
+          "suggestedWeight": "String (e.g., '135 lbs', or null if warmup/new)"
         }
       ]
     }
@@ -75,7 +88,7 @@ Schema requirement:
 // Endpoint to recalibrate an existing workout plan
 app.post('/api/recalibrate-plan', async (req, res) => {
     try {
-        const { currentPlan, feedback } = req.body;
+        const { currentPlan, feedback, workoutHistory } = req.body;
 
         if (!process.env.GEMINI_API_KEY) {
             return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
@@ -89,7 +102,15 @@ ${JSON.stringify(currentPlan, null, 2)}
 The user provided the following feedback/request for changes:
 "${feedback}"
 
+Past Performance History (use to calculate suggested weights):
+${workoutHistory ? JSON.stringify(workoutHistory) : 'None'}
+
 Adjust the current plan according to the feedback while maintaining the exact same JSON schema. 
+Smart Programming Rules:
+1. Warmups and mobility work should NOT have a suggested weight, and should have appropriate reps.
+2. For main working sets, if the user has past performance history for a movement, suggest a challenging but realistic weight based on their history. If it's a new movement, leave suggestedWeight blank or null.
+3. Incorporate the feedback heavily to modify exercises, intensities, or phase.
+
 IMPORTANT: You MUST return the plan STRICTLY as a raw JSON object. Do not include markdown formatting, do not include \`\`\`json blocks. Just the raw JSON object.
 Schema requirement:
 {
@@ -98,11 +119,13 @@ Schema requirement:
   "days": [
     {
       "dayName": "String",
+      "workoutIntro": "String (A short motivational/instructional coaching blurb for the day, explaining the stimulus or goal)",
       "exercises": [
         {
           "name": "String",
           "sets": 3,
-          "reps": "String"
+          "reps": "String",
+          "suggestedWeight": "String (e.g., '135 lbs', or null if warmup/new)"
         }
       ]
     }

@@ -123,7 +123,10 @@
         <div id="screen-plan" class="screen flex-col h-full overflow-y-auto pb-24">
             <div class="px-8 py-6 sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-borderSubtle flex justify-between items-end">
                 <div>
-                    <p id="plan-week" class="text-textMuted text-xs font-semibold uppercase tracking-widest mb-1">Week 1</p>
+                    <div class="flex items-center space-x-3 mb-1">
+                        <p id="plan-week" class="text-textMuted text-xs font-semibold uppercase tracking-widest">Week 1</p>
+                        <button onclick="if(confirm('Start a completely new program? This will wipe your current active plan.')){localStorage.removeItem('currentWorkoutPlan'); currentWorkoutPlan=null; nav('screen-onboarding');}" class="text-[9px] text-textMuted hover:text-white transition-colors bg-surface border border-borderSubtle px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Reset</button>
+                    </div>
                     <h1 id="plan-title" class="text-2xl font-semibold tracking-tight text-white">Your Plan</h1>
                 </div>
                 <button onclick="nav('screen-adjust')" class="w-10 h-10 flex items-center justify-center bg-surface border border-borderSubtle rounded-full text-textMuted hover:text-white transition-colors">
@@ -408,7 +411,7 @@
                 });
                 
                 if (uncompletedDays === 0) {
-                    container.innerHTML = `
+                    container.innerHTML += `
                     <div class="bg-surface p-6 rounded-3xl border border-borderSubtle text-center text-textMuted">
                         <h3 class="text-white font-semibold mb-2">Cycle Complete!</h3>
                         <p class="text-sm mb-4">You have finished all workouts for this cycle.</p>
@@ -421,7 +424,7 @@
         async function generateRecap() {
             const btn = document.getElementById('btn-generate-recap');
             const originalText = btn.innerHTML;
-            btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-black" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Generating...</span>`;
+            btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-white" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Generating...</span>`;
             btn.disabled = true;
 
             const workoutHistory = JSON.parse(localStorage.getItem('workoutJournal') || '[]');
@@ -480,16 +483,19 @@
                 day.exercises.forEach((ex, exIndex) => {
                     let setsHtml = '';
                     const numSets = parseInt(ex.sets) || 3;
-                    const defaultWeight = ex.suggestedWeight || 'lbs';
+                    const defaultWeight = ex.suggestedWeight || 'BW';
 
                     // Lookup previous performance for this exercise
                     let prevPerf = '-';
                     for (let i = history.length - 1; i >= 0; i--) {
-                        if (history[i].exercises && history[i].exercises[exIndex] && history[i].exercises[exIndex].name === ex.name) {
-                            const lastSet = history[i].exercises[exIndex].sets[history[i].exercises[exIndex].sets.length - 1];
-                            if (lastSet) {
-                                prevPerf = `${lastSet.weight}x${lastSet.reps}`;
-                                break;
+                        if (history[i].exercises) {
+                            const pastEx = history[i].exercises.find(e => e && e.name.toLowerCase() === ex.name.toLowerCase());
+                            if (pastEx && pastEx.sets && pastEx.sets.length > 0) {
+                                const lastSet = pastEx.sets[pastEx.sets.length - 1];
+                                if (lastSet && lastSet.weight && lastSet.reps) {
+                                    prevPerf = `${lastSet.weight}x${lastSet.reps}`;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -531,6 +537,7 @@
 
             workoutStartTime = Date.now();
             if (workoutTimerInterval) clearInterval(workoutTimerInterval);
+            document.getElementById('active-workout-timer').innerText = '00:00:00';
             workoutTimerInterval = setInterval(() => {
                 const diff = Math.floor((Date.now() - workoutStartTime) / 1000);
                 const h = String(Math.floor(diff / 3600)).padStart(2, '0');
@@ -557,6 +564,7 @@
         }
 
         function cancelWorkout() {
+            if (!confirm("Exit workout? Current progress will be discarded.")) return;
             if (workoutTimerInterval) clearInterval(workoutTimerInterval);
             nav('screen-plan', 'nav-plan');
         }
@@ -691,6 +699,15 @@
                 }
                 
                 const plan = await response.json();
+                
+                if (currentWorkoutPlan && currentWorkoutPlan.days) {
+                    plan.days.forEach((newDay, idx) => {
+                        if (currentWorkoutPlan.days[idx] && currentWorkoutPlan.days[idx].completed) {
+                            newDay.completed = true;
+                        }
+                    });
+                }
+                
                 console.log("RECALIBRATED PLAN:", plan);
                 currentWorkoutPlan = plan; // Update state
                 localStorage.setItem('currentWorkoutPlan', JSON.stringify(plan));
@@ -715,6 +732,12 @@
 
             const energy = document.getElementById('journal-energy').value;
             const intentions = document.getElementById('journal-intentions').value;
+            
+            if (!energy.trim() && !intentions.trim()) {
+                alert("Please enter your reflections before saving.");
+                return;
+            }
+
             const combinedFeedback = `Energy/Pains: ${energy}. Intentions: ${intentions}.`;
 
             // Save to localStorage
@@ -742,6 +765,15 @@
                 }
                 
                 const plan = await response.json();
+                
+                if (currentWorkoutPlan && currentWorkoutPlan.days) {
+                    plan.days.forEach((newDay, idx) => {
+                        if (currentWorkoutPlan.days[idx] && currentWorkoutPlan.days[idx].completed) {
+                            newDay.completed = true;
+                        }
+                    });
+                }
+
                 console.log("RECALIBRATED PLAN FROM JOURNAL:", plan);
                 currentWorkoutPlan = plan; // Update state
                 localStorage.setItem('currentWorkoutPlan', JSON.stringify(plan));

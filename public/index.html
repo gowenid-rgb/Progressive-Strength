@@ -131,6 +131,24 @@
                 </button>
             </div>
 
+            <!-- Macro-cycle Timeline -->
+            <div class="px-6 pt-4 pb-2">
+                <div class="flex items-center justify-between relative">
+                    <div class="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-surface border border-borderSubtle z-0"></div>
+                    
+                    <div id="cycle-node-1" class="z-10 bg-surfaceElevated w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted">W1</div>
+                    <div id="cycle-node-2" class="z-10 bg-background w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted">W2</div>
+                    <div id="cycle-node-3" class="z-10 bg-background w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted">W3</div>
+                    <div id="cycle-node-4" class="z-10 bg-background w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted">W4</div>
+                </div>
+                <div class="flex justify-between text-[8px] uppercase tracking-widest text-textMuted mt-2 font-semibold px-1">
+                    <span id="cycle-label-1" class="text-white">Base</span>
+                    <span id="cycle-label-2">Build</span>
+                    <span id="cycle-label-3">Peak</span>
+                    <span id="cycle-label-4">Deload</span>
+                </div>
+            </div>
+
             <div id="plan-days-container" class="p-6 space-y-4">
                 <!-- Dynamic cards will be injected here -->
             </div>
@@ -220,50 +238,24 @@
             </div>
             
             <div class="p-6 space-y-6">
-                <!-- Chart Mock -->
-                <div class="bg-surface p-6 rounded-[24px] border border-borderSubtle">
-                    <h3 class="font-semibold text-white mb-6 text-sm tracking-tight">Training Volume (lbs)</h3>
-                    <!-- Bar Chart via CSS -->
-                    <div class="h-32 flex items-end space-x-3 px-1 pb-1 pt-4 border-b border-borderSubtle">
-                        <div class="bg-surfaceElevated w-1/5 h-1/4 rounded-t-md"></div>
-                        <div class="bg-surfaceElevated w-1/5 h-2/5 rounded-t-md"></div>
-                        <div class="bg-surfaceElevated w-1/5 h-1/2 rounded-t-md"></div>
-                        <div class="bg-surfaceElevated w-1/5 h-3/4 rounded-t-md"></div>
-                        <div class="bg-white w-1/5 h-full rounded-t-md relative">
-                             <div class="absolute -top-7 left-1/2 -translate-x-1/2 text-white text-[10px] font-bold">18k</div>
-                        </div>
-                    </div>
-                    <div class="flex justify-between text-[10px] text-textMuted mt-3 px-1 font-semibold uppercase tracking-widest">
-                        <span>W1</span>
-                        <span>W2</span>
-                        <span>W3</span>
-                        <span>W4</span>
-                        <span class="text-white">Now</span>
-                    </div>
-                </div>
+                
+                <button id="btn-generate-recap" onclick="generateRecap()" class="w-full bg-surface border border-borderSubtle text-white py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-surfaceElevated transition-all active:scale-[0.98]">
+                    <svg class="w-5 h-5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <span>Generate AI Weekly Recap</span>
+                </button>
 
-                <!-- Lifts Progress -->
-                <div>
-                    <h3 class="font-semibold text-white mb-4 text-sm tracking-tight">Strength Milestones</h3>
-                    <div class="space-y-3">
-                        <div class="bg-surface p-5 rounded-[20px] border border-borderSubtle flex items-center justify-between">
-                            <div>
-                                <div class="font-semibold text-sm text-white">Bench Press</div>
-                                <div class="text-xs text-textMuted mt-1">185 → 225 lbs</div>
-                            </div>
-                            <div class="text-black font-semibold text-xs bg-white px-3 py-1.5 rounded-full">
-                                +22%
-                            </div>
-                        </div>
-                        
-                        <div class="bg-surface p-5 rounded-[20px] border border-borderSubtle flex items-center justify-between">
-                            <div>
-                                <div class="font-semibold text-sm text-white">Barbell Squat</div>
-                                <div class="text-xs text-textMuted mt-1">275 → 295 lbs</div>
-                            </div>
-                            <div class="text-black font-semibold text-xs bg-white px-3 py-1.5 rounded-full">
-                                +8%
-                            </div>
+                <div id="recap-container" class="hidden">
+                    <!-- AI Recap Content -->
+                    <div class="bg-surface p-6 rounded-[24px] border border-borderSubtle mb-6">
+                        <h3 id="recap-title" class="font-semibold text-white mb-3 text-lg tracking-tight">Title</h3>
+                        <p id="recap-message" class="text-sm text-textMuted leading-relaxed">Message goes here...</p>
+                    </div>
+
+                    <!-- AI Stats -->
+                    <div>
+                        <h3 class="font-semibold text-white mb-4 text-sm tracking-tight">Key Insights</h3>
+                        <div id="recap-stats-container" class="space-y-3">
+                            <!-- Injected stats -->
                         </div>
                     </div>
                 </div>
@@ -334,7 +326,25 @@
         function renderPlan(plan) {
             // Update Title and Week
             document.getElementById('plan-title').innerText = plan.planName || document.getElementById('input-goal').value;
-            document.getElementById('plan-week').innerText = 'Week ' + (plan.week || 1);
+            const weekNum = plan.week || 1;
+            document.getElementById('plan-week').innerText = 'Week ' + weekNum;
+
+            // Update Timeline Visualizer
+            for (let i = 1; i <= 4; i++) {
+                const node = document.getElementById(`cycle-node-${i}`);
+                const label = document.getElementById(`cycle-label-${i}`);
+                
+                if (i < weekNum) {
+                    node.className = "z-10 bg-white w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-black";
+                    label.className = "text-textMuted";
+                } else if (i === weekNum) {
+                    node.className = "z-10 bg-surfaceElevated w-8 h-8 rounded-full border border-white flex items-center justify-center text-[10px] font-bold text-white shadow-[0_0_15px_rgba(255,255,255,0.3)]";
+                    label.className = "text-white";
+                } else {
+                    node.className = "z-10 bg-background w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted";
+                    label.className = "text-textMuted";
+                }
+            }
 
             // Build Days HTML
             const container = document.getElementById('plan-days-container');
@@ -370,6 +380,50 @@
                     
                     container.innerHTML += dayHtml;
                 });
+            }
+        }
+
+        async function generateRecap() {
+            const btn = document.getElementById('btn-generate-recap');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-black" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Generating...</span>`;
+            btn.disabled = true;
+
+            const workoutHistory = JSON.parse(localStorage.getItem('workoutJournal') || '[]');
+
+            try {
+                const response = await fetch('/api/generate-recap', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ workoutHistory })
+                });
+                
+                if (!response.ok) throw new Error("Failed to generate recap");
+                
+                const recap = await response.json();
+                
+                document.getElementById('recap-title').innerText = recap.recapTitle;
+                document.getElementById('recap-message').innerText = recap.recapMessage;
+                
+                const statsContainer = document.getElementById('recap-stats-container');
+                statsContainer.innerHTML = '';
+                if (recap.stats) {
+                    recap.stats.forEach(stat => {
+                        statsContainer.innerHTML += `
+                        <div class="bg-surface p-5 rounded-[20px] border border-borderSubtle flex items-center justify-between">
+                            <div class="font-semibold text-sm text-white">${stat.label}</div>
+                            <div class="text-black font-semibold text-xs bg-white px-3 py-1.5 rounded-full">${stat.value}</div>
+                        </div>`;
+                    });
+                }
+                
+                document.getElementById('recap-container').classList.remove('hidden');
+            } catch (err) {
+                console.error(err);
+                alert("Network error or AI failed.");
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         }
 

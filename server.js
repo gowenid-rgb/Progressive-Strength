@@ -154,6 +154,53 @@ Schema requirement:
     }
 });
 
+// Endpoint to generate a weekly recap
+app.post('/api/generate-recap', async (req, res) => {
+    try {
+        const { workoutHistory } = req.body;
+
+        if (!process.env.GEMINI_API_KEY) {
+            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        }
+
+        const prompt = `You are an expert AI strength and conditioning coach.
+
+Here is the user's completed workout history for the past cycle/week:
+${workoutHistory ? JSON.stringify(workoutHistory, null, 2) : 'No workouts logged yet.'}
+
+Analyze their performance. Calculate their consistency (how many workouts they completed), spot any volume/weight increases, and write a customized motivational recap. Forecast what their focus should be for the next week based on standard progressive overload (e.g. if they just hit hard workouts, maybe suggest a deload or peak phase).
+
+IMPORTANT: You MUST return the response STRICTLY as a raw JSON object. Do not include markdown formatting, do not include \`\`\`json blocks.
+Schema requirement:
+{
+  "recapTitle": "String (e.g., 'A Week of Heavy Lifting')",
+  "recapMessage": "String (The detailed AI analysis and forecast, ~3 sentences)",
+  "stats": [
+    { "label": "String (e.g. 'Consistency')", "value": "String (e.g. '3/3 Workouts')" },
+    { "label": "String (e.g. 'Volume Trend')", "value": "String (e.g. 'Up 5%')" }
+  ]
+}`;
+
+        const response = await ai.interactions.create({
+            model: 'gemini-3.8-flash',
+            input: prompt
+        });
+
+        let textResult = response.outputText || response.output_text || response.text;
+        
+        if (textResult.startsWith('\`\`\`json')) {
+            textResult = textResult.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '');
+        }
+
+        const recap = JSON.parse(textResult.trim());
+        res.json(recap);
+
+    } catch (error) {
+        console.error('Error generating recap:', error);
+        res.status(500).json({ error: error.message || 'Failed to generate recap' });
+    }
+});
+
 // Endpoint to list available models for debugging
 app.get('/api/models', (req, res) => {
     const https = require('https');

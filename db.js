@@ -7,7 +7,7 @@ const pool = new Pool({
 
 const initDB = async () => {
     try {
-        await pool.query(
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 email VARCHAR(255) UNIQUE NOT NULL,
@@ -20,7 +20,7 @@ const initDB = async () => {
                 current_plan JSONB,
                 workout_journal JSONB DEFAULT '[]'::jsonb
             );
-        );
+        `);
         console.log("Database initialized successfully.");
     } catch (err) {
         console.error("Failed to initialize database:", err);

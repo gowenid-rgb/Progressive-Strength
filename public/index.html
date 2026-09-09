@@ -202,13 +202,13 @@
         <div id="screen-journal" class="screen flex-col h-full bg-background overflow-y-auto pb-24">
             <div class="p-6 pt-8 flex justify-between items-center sticky top-0 bg-background/80 backdrop-blur-md z-10 border-b border-borderSubtle">
                 <h1 class="text-2xl font-semibold tracking-tight text-white">Check-in</h1>
-                <span class="text-[10px] font-bold text-white bg-surfaceElevated px-2.5 py-1 rounded-full uppercase tracking-widest border border-borderSubtle">Week 4</span>
+                <span id="journal-week-badge" class="text-[10px] font-bold text-white bg-surfaceElevated px-2.5 py-1 rounded-full uppercase tracking-widest border border-borderSubtle">Current Week</span>
             </div>
 
             <div class="p-6 space-y-8">
                 <div>
                     <h3 class="font-semibold text-lg text-white mb-2 tracking-tight">Milestone Reflection</h3>
-                    <p class="text-sm text-textMuted mb-8 leading-relaxed">Reflect on your journey. This guides the architecture of Phase 2.</p>
+                    <p class="text-sm text-textMuted mb-8 leading-relaxed">Reflect on your journey. This guides the architecture of your next cycle.</p>
                     
                     <div class="space-y-6">
                         <div>
@@ -234,11 +234,6 @@
         <div id="screen-metrics" class="screen flex-col h-full bg-background overflow-y-auto pb-24">
             <div class="p-6 pt-8 sticky top-0 bg-background/80 backdrop-blur-md z-10 border-b border-borderSubtle">
                 <h1 class="text-2xl font-semibold tracking-tight text-white">Progress</h1>
-                <!-- Tabs -->
-                <div class="flex mt-6 bg-surface p-1 rounded-xl border border-borderSubtle">
-                    <button class="flex-1 bg-surfaceElevated text-white text-xs uppercase tracking-widest font-semibold py-2 rounded-lg shadow-sm border border-borderSubtle">Overview</button>
-                    <button class="flex-1 text-textMuted text-xs uppercase tracking-widest font-semibold py-2 hover:text-white transition-colors">Movements</button>
-                </div>
             </div>
             
             <div class="p-6 space-y-6">
@@ -267,7 +262,7 @@
         </div>
         
         <!-- Persistent Bottom Nav -->
-        <div id="bottom-nav" class="hidden mt-auto glass-nav flex justify-around px-2 py-4 pb-6 sticky bottom-0 z-50">
+        <div id="bottom-nav" class="hidden mt-auto glass-nav justify-around px-2 py-4 pb-6 sticky bottom-0 z-50">
             <button id="nav-plan" onclick="nav('screen-plan', 'nav-plan')" class="nav-btn text-textMuted flex flex-col items-center w-16 transition-colors hover:text-white">
                 <svg class="w-5 h-5 mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 <span class="text-[10px] font-semibold tracking-wide">Plan</span>
@@ -306,12 +301,12 @@
             document.getElementById(screenId).classList.add('active');
 
             const bottomNav = document.getElementById('bottom-nav');
-            if(screenId === 'screen-onboarding' || screenId === 'screen-active-workout' || screenId === 'screen-adjust') {
-                bottomNav.classList.remove('flex');
+            if (screenId === 'screen-onboarding' || screenId === 'screen-active-workout' || screenId === 'screen-adjust') {
                 bottomNav.classList.add('hidden');
+                bottomNav.classList.remove('flex');
             } else {
-                bottomNav.classList.add('flex');
                 bottomNav.classList.remove('hidden');
+                bottomNav.classList.add('flex');
             }
 
             if(navBtnId) {
@@ -343,6 +338,7 @@
             document.getElementById('plan-title').innerText = plan.planName || document.getElementById('input-goal').value;
             const weekNum = plan.week || 1;
             document.getElementById('plan-week').innerText = 'Week ' + weekNum;
+            document.getElementById('journal-week-badge').innerText = 'Week ' + weekNum;
 
             // Update Timeline Visualizer
             for (let i = 1; i <= 4; i++) {
@@ -368,7 +364,18 @@
             if (plan.days && Array.isArray(plan.days)) {
                 let uncompletedDays = 0;
                 plan.days.forEach((day, index) => {
-                    if (day.completed) return; // Skip rendering completed days
+                    if (day.completed) {
+                        container.innerHTML += `
+                        <div class="bg-surface p-4 rounded-3xl border border-borderSubtle opacity-50 flex justify-between items-center">
+                            <div>
+                                <span class="text-[10px] font-bold text-textMuted uppercase tracking-widest">Day ${index + 1}</span>
+                                <h3 class="font-semibold text-white tracking-tight">${day.dayName || 'Workout'}</h3>
+                            </div>
+                            <span class="text-xs bg-white text-black px-2 py-1 rounded-full font-bold">✓ Done</span>
+                        </div>`;
+                        return;
+                    }
+                    
                     uncompletedDays++;
 
                     let exercisesHtml = '';
@@ -467,19 +474,33 @@
                 container.innerHTML += `<div class="bg-surfaceElevated p-4 rounded-xl border border-borderSubtle mb-4 text-sm text-white italic">" ${day.workoutIntro} "</div>`;
             }
 
+            const history = JSON.parse(localStorage.getItem('workoutJournal') || '[]');
+
             if (day.exercises && Array.isArray(day.exercises)) {
                 day.exercises.forEach((ex, exIndex) => {
                     let setsHtml = '';
                     const numSets = parseInt(ex.sets) || 3;
                     const defaultWeight = ex.suggestedWeight || 'lbs';
 
+                    // Lookup previous performance for this exercise
+                    let prevPerf = '-';
+                    for (let i = history.length - 1; i >= 0; i--) {
+                        if (history[i].exercises && history[i].exercises[exIndex] && history[i].exercises[exIndex].name === ex.name) {
+                            const lastSet = history[i].exercises[exIndex].sets[history[i].exercises[exIndex].sets.length - 1];
+                            if (lastSet) {
+                                prevPerf = `${lastSet.weight}x${lastSet.reps}`;
+                                break;
+                            }
+                        }
+                    }
+
                     for (let s = 1; s <= numSets; s++) {
                         setsHtml += `
                         <div class="grid grid-cols-12 gap-2 mb-3 items-center text-center bg-surfaceElevated p-2 rounded-xl border border-borderSubtle set-row">
                             <div class="col-span-1 text-xs text-white font-medium">${s}</div>
-                            <div class="col-span-3 text-xs text-textMuted text-left">-</div>
-                            <div class="col-span-3"><input type="number" data-ex="${exIndex}" data-set="${s}" class="workout-weight w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${defaultWeight}"></div>
-                            <div class="col-span-3"><input type="number" data-ex="${exIndex}" data-set="${s}" class="workout-reps w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${ex.reps}"></div>
+                            <div class="col-span-3 text-xs text-textMuted text-left pl-1">${prevPerf}</div>
+                            <div class="col-span-3"><input type="text" inputmode="numeric" data-ex="${exIndex}" data-set="${s}" class="workout-weight w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${defaultWeight}"></div>
+                            <div class="col-span-3"><input type="text" inputmode="numeric" data-ex="${exIndex}" data-set="${s}" class="workout-reps w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${ex.reps}"></div>
                             <div class="col-span-2 flex justify-center">
                                 <div onclick="toggleSet(this)" class="w-6 h-6 rounded-full border border-textMuted hover:border-white cursor-pointer transition-colors flex items-center justify-center text-transparent">✓</div>
                             </div>

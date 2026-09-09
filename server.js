@@ -2,9 +2,19 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const { GoogleGenAI } = require('@google/genai');
+const db = require('./db');
+const authRoutes = require('./authRoutes');
+const { authenticateToken } = require('./middleware');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize Database
+if (process.env.DATABASE_URL) {
+    db.initDB();
+} else {
+    console.warn("No DATABASE_URL provided. Database will not initialize.");
+}
 
 // Initialize Gemini (New SDK)
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -12,8 +22,36 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Authentication Routes
+app.use('/api/auth', authRoutes);
+
+// User Data Sync Endpoints
+app.get('/api/user/data', authenticateToken, async (req, res) => {
+    try {
+        const result = await db.query('SELECT current_plan, workout_journal FROM user_data WHERE user_id = $1', [req.user.id]);
+        if (result.rows.length === 0) return res.json({ currentPlan: null, workoutJournal: [] });
+        res.json({
+            currentPlan: result.rows[0].current_plan,
+            workoutJournal: result.rows[0].workout_journal || []
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to fetch user data' });
+    }
+});
+
+app.post('/api/user/data', authenticateToken, async (req, res) => {
+    try {
+        const { currentPlan, workoutJournal } = req.body;
+        await db.query('UPDATE user_data SET current_plan = $1, workout_journal = $2 WHERE user_id = $3', [currentPlan ? JSON.stringify(currentPlan) : null, JSON.stringify(workoutJournal || []), req.user.id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to save user data' });
+    }
+});
+
 // Endpoint to generate a workout plan
-app.post('/api/generate-plan', async (req, res) => {
+app.post('/api/generate-plan', authenticateToken, async (req, res) => {
     try {
         const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails, workoutHistory, journalEntries } = req.body;
 
@@ -86,7 +124,7 @@ Schema requirement:
 });
 
 // Endpoint to recalibrate an existing workout plan
-app.post('/api/recalibrate-plan', async (req, res) => {
+app.post('/api/recalibrate-plan', authenticateToken, async (req, res) => {
     try {
         const { currentPlan, feedback, workoutHistory } = req.body;
 
@@ -155,7 +193,7 @@ Schema requirement:
 });
 
 // Endpoint to generate a weekly recap
-app.post('/api/generate-recap', async (req, res) => {
+app.post('/api/generate-recap', authenticateToken, async (req, res) => {
     try {
         const { workoutHistory } = req.body;
 

@@ -54,8 +54,19 @@
             </div>
         </div>
 
+        <!-- SCREEN 0: AUTH -->
+        <div id='screen-auth' class='screen flex-col h-full overflow-y-auto pb-24 items-center justify-center p-8 active'>
+            <div class='w-full'>
+                <h1 class='text-4xl font-bold text-white mb-2 tracking-tight'>Login</h1>
+                <p class='text-textMuted mb-8 text-sm'>Welcome to Progressive Strength.</p>
+                <input type='email' id='auth-email' placeholder='Email' class='w-full bg-surface border border-borderSubtle rounded-xl p-4 text-white mb-4 focus:outline-none focus:border-white transition-colors'>
+                <input type='password' id='auth-password' placeholder='Password' class='w-full bg-surface border border-borderSubtle rounded-xl p-4 text-white mb-6 focus:outline-none focus:border-white transition-colors'>
+                <button onclick='handleAuth("login")' class='w-full bg-white text-black py-4 rounded-xl font-bold mb-4 hover:bg-gray-200'>Log In</button>
+                <button onclick='handleAuth("register")' class='w-full bg-surface text-white py-4 rounded-xl font-bold border border-borderSubtle hover:bg-surfaceElevated'>Create Account</button>
+            </div>
+        </div>
         <!-- SCREEN 1: ONBOARDING -->
-        <div id="screen-onboarding" class="screen active flex-col h-full overflow-y-auto pb-24">
+        <div id="screen-onboarding" class="screen flex-col h-full overflow-y-auto pb-24">
             <div class="p-8 pt-4">
                 <h1 class="text-4xl font-semibold tracking-tighter mb-3 text-white">Setup</h1>
                 <p class="text-textMuted text-sm font-medium mb-10">Configure your training parameters.</p>
@@ -125,7 +136,8 @@
                 <div>
                     <div class="flex items-center space-x-3 mb-1">
                         <p id="plan-week" class="text-textMuted text-xs font-semibold uppercase tracking-widest">Week 1</p>
-                        <button onclick="if(confirm('Start a completely new program? This will wipe your current active plan.')){localStorage.removeItem('currentWorkoutPlan'); currentWorkoutPlan=null; nav('screen-onboarding');}" class="text-[9px] text-textMuted hover:text-white transition-colors bg-surface border border-borderSubtle px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Reset</button>
+                        <button onclick="if(confirm('Start a completely new program? This will wipe your current active plan.')){localStorage.removeItem('currentWorkoutPlan'); currentWorkoutPlan=null; syncData(); nav('screen-onboarding');}" class="text-[9px] text-textMuted hover:text-white transition-colors bg-surface border border-borderSubtle px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Reset</button>
+                        <button onclick="localStorage.removeItem('token'); nav('screen-auth');" class="text-[9px] text-textMuted hover:text-white transition-colors bg-surface border border-borderSubtle px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Logout</button>
                     </div>
                     <h1 id="plan-title" class="text-2xl font-semibold tracking-tight text-white">Your Plan</h1>
                 </div>
@@ -288,23 +300,83 @@
         let workoutStartTime = null;
         let workoutTimerInterval = null;
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const savedPlan = localStorage.getItem('currentWorkoutPlan');
-            if (savedPlan) {
-                try {
-                    currentWorkoutPlan = JSON.parse(savedPlan);
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                nav('screen-auth');
+                return;
+            }
+            try {
+                const res = await fetch('/api/user/data', { headers: { 'Authorization': 'Bearer ' + token } });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.currentPlan) {
+                        currentWorkoutPlan = typeof data.currentPlan === 'string' ? JSON.parse(data.currentPlan) : data.currentPlan;
+                        localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
+                        renderPlan(currentWorkoutPlan);
+                        nav('screen-plan', 'nav-plan');
+                    } else {
+                        nav('screen-onboarding');
+                    }
+                    if (data.workoutJournal) {
+                        localStorage.setItem('workoutJournal', JSON.stringify(data.workoutJournal));
+                    }
+                } else {
+                    nav('screen-auth');
+                }
+            } catch(e) { nav('screen-auth'); }
+        });
+
+        async function handleAuth(type) {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+            if(!email || !password) return alert('Email and password required');
+            try {
+                const res = await fetch('/api/auth/' + type, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if(!res.ok) throw new Error(data.error || 'Failed');
+                
+                localStorage.setItem('token', data.token);
+                const userRes = await fetch('/api/user/data', { headers: { 'Authorization': 'Bearer ' + data.token } });
+                const userData = await userRes.json();
+                if (userData.currentPlan) {
+                    currentWorkoutPlan = typeof userData.currentPlan === 'string' ? JSON.parse(userData.currentPlan) : userData.currentPlan;
+                    localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
                     renderPlan(currentWorkoutPlan);
                     nav('screen-plan', 'nav-plan');
-                } catch(e) {}
+                } else {
+                    nav('screen-onboarding');
+                }
+            } catch(e) {
+                alert(e.message);
             }
-        });
+        }
+        
+        async function syncData() {
+            const token = localStorage.getItem('token');
+            if(!token) return;
+            const currentPlan = localStorage.getItem('currentWorkoutPlan');
+            const workoutJournal = localStorage.getItem('workoutJournal');
+            await fetch('/api/user/data', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    currentPlan: currentPlan ? JSON.parse(currentPlan) : null,
+                    workoutJournal: workoutJournal ? JSON.parse(workoutJournal) : []
+                })
+            });
+        }
 
         function nav(screenId, navBtnId = null) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.getElementById(screenId).classList.add('active');
 
             const bottomNav = document.getElementById('bottom-nav');
-            if (screenId === 'screen-onboarding' || screenId === 'screen-active-workout' || screenId === 'screen-adjust') {
+            if (screenId === 'screen-onboarding' || screenId === 'screen-active-workout' || screenId === 'screen-adjust' || screenId === 'screen-auth') {
                 bottomNav.classList.add('hidden');
                 bottomNav.classList.remove('flex');
             } else {
@@ -432,7 +504,7 @@
             try {
                 const response = await fetch('/api/generate-recap', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify({ workoutHistory })
                 });
                 
@@ -608,10 +680,10 @@
             localStorage.setItem('workoutJournal', JSON.stringify(journal));
 
             day.completed = true;
-            localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan));
+            localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
 
             console.log("WORKOUT SAVED:", workoutLog);
-            alert("Workout finished and saved to journal!");
+            await syncData(); alert("Workout finished and saved to journal!");
             renderPlan(currentWorkoutPlan);
             nav('screen-plan', 'nav-plan');
         }
@@ -635,7 +707,7 @@
             try {
                 const response = await fetch('/api/generate-plan', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify(payload)
                 });
                 
@@ -648,7 +720,7 @@
                 const plan = await response.json();
                 console.log("GENERATED PLAN:", plan);
                 currentWorkoutPlan = plan; // Store state
-                localStorage.setItem('currentWorkoutPlan', JSON.stringify(plan));
+                localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
 
                 renderPlan(plan);
                 nav('screen-plan', 'nav-plan');
@@ -688,7 +760,7 @@
             try {
                 const response = await fetch('/api/recalibrate-plan', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback, workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]') })
                 });
                 
@@ -710,7 +782,7 @@
                 
                 console.log("RECALIBRATED PLAN:", plan);
                 currentWorkoutPlan = plan; // Update state
-                localStorage.setItem('currentWorkoutPlan', JSON.stringify(plan));
+                localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
 
                 renderPlan(plan);
                 document.getElementById('input-adjust').value = ''; // Clear input
@@ -754,7 +826,7 @@
                 // We use the same recalibrate endpoint but pass the combined journal entry as feedback
                 const response = await fetch('/api/recalibrate-plan', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback: combinedFeedback, workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]') })
                 });
                 
@@ -776,7 +848,7 @@
 
                 console.log("RECALIBRATED PLAN FROM JOURNAL:", plan);
                 currentWorkoutPlan = plan; // Update state
-                localStorage.setItem('currentWorkoutPlan', JSON.stringify(plan));
+                localStorage.setItem('currentWorkoutPlan', JSON.stringify()); await syncData();
 
                 renderPlan(plan);
                 document.getElementById('journal-energy').value = ''; 

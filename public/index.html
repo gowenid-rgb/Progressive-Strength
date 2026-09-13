@@ -219,34 +219,31 @@
             </div>
         </div>
 
-        <!-- SCREEN 4: MILESTONE JOURNAL -->
+        <!-- SCREEN 4: JOURNAL -->
         <div id="screen-journal" class="screen flex-col h-full bg-background overflow-y-auto pb-24">
-            <div class="p-6 pt-8 flex justify-between items-center sticky top-0 bg-background/80 backdrop-blur-md z-10 border-b border-borderSubtle">
-                <h1 class="text-2xl font-semibold tracking-tight text-white">Check-in</h1>
-                <span id="journal-week-badge" class="text-[10px] font-bold text-white bg-surfaceElevated px-2.5 py-1 rounded-full uppercase tracking-widest border border-borderSubtle">Current Week</span>
+            <div class="p-6 pt-8 flex justify-between items-center sticky top-0 bg-background/80 backdrop-blur-md z-20 border-b border-borderSubtle">
+                <h1 class="text-2xl font-semibold tracking-tight text-white">Journal</h1>
+                <span id="journal-week-badge" class="text-[10px] font-bold text-white bg-surfaceElevated px-2.5 py-1 rounded-full uppercase tracking-widest border border-borderSubtle">Week 1</span>
             </div>
 
-            <div class="p-6 space-y-8">
-                <div>
-                    <h3 class="font-semibold text-lg text-white mb-2 tracking-tight">Milestone Reflection</h3>
-                    <p class="text-sm text-textMuted mb-8 leading-relaxed">Reflect on your journey. This guides the architecture of your next cycle.</p>
+            <div class="p-6">
+                <p class="text-sm text-textMuted mb-5 leading-relaxed">
+                    Anything worth remembering. How you felt, what was hard, a niggle, how you slept.
+                    Your coach reads these alongside your training data.
+                </p>
 
-                    <div class="space-y-6">
-                        <div>
-                            <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">How is your energy? Any pains?</label>
-                            <textarea id="journal-energy" class="w-full h-28 bg-surface border border-borderSubtle rounded-[20px] p-5 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none"></textarea>
-                        </div>
-                        <div>
-                            <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">Intentions for next phase?</label>
-                            <textarea id="journal-intentions" class="w-full h-28 bg-surface border border-borderSubtle rounded-[20px] p-5 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none"></textarea>
-                        </div>
-                    </div>
+                <textarea id="journal-note" rows="5"
+                    class="w-full bg-surface border border-borderSubtle rounded-[20px] p-5 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none"
+                    placeholder="Left shoulder felt tight on pressing. Slept badly. Squats moved well."></textarea>
 
-                    <div class="mt-8 pt-4 border-t border-borderSubtle">
-                        <button id="btn-submit-journal" onclick="submitJournal()" class="w-full bg-white text-black py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
-                            <span>Save & Recalibrate Plan</span>
-                        </button>
-                    </div>
+                <button id="btn-save-note" onclick="saveNote()"
+                    class="mt-4 w-full bg-white text-black py-4 rounded-2xl font-semibold hover:bg-gray-200 transition-all active:scale-[0.98]">
+                    Save Note
+                </button>
+
+                <div class="mt-10">
+                    <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-4">Previous Notes</h3>
+                    <div id="journal-entries" class="space-y-3"></div>
                 </div>
             </div>
         </div>
@@ -552,13 +549,13 @@
             return restored;
         }
 
-        async function postJournalEntry(energy, intentions) {
+        async function postJournalEntry(note) {
             const token = localStorage.getItem('token');
             if(!token) return false;
             const res = await fetch('/api/journal', {
                 method: 'POST',
                 headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ energy, intentions })
+                body: JSON.stringify({ note })
             });
             if (!res.ok) console.error('Journal save failed:', res.status);
             return res.ok;
@@ -576,6 +573,8 @@
                 bottomNav.classList.remove('hidden');
                 bottomNav.classList.add('flex');
             }
+
+            if (screenId === 'screen-journal') renderJournalEntries();
 
             if(navBtnId) {
                 document.querySelectorAll('.nav-btn').forEach(b => {
@@ -1302,75 +1301,69 @@
             }
         }
 
-        async function submitJournal() {
-            if (!currentWorkoutPlan) {
-                alert("You need an active plan to recalibrate based on journal entries.");
-                return;
-            }
+        // Saving a note makes NO AI call and cannot touch your programme.
+        //
+        // This screen used to POST to /api/recalibrate-plan on every save, so writing a
+        // reflection silently rewrote the whole week. Programme changes belong in Adjust
+        // Program, which is deliberately tucked away on the Plan screen. Capture has to be
+        // cheap -- eight seconds, in a gym, possibly offline -- or it stops happening.
+        async function saveNote() {
+            const box = document.getElementById('journal-note');
+            const note = (box.value || '').trim();
+            if (!note) return alert('Write something first.');
 
-            const energy = document.getElementById('journal-energy').value;
-            const intentions = document.getElementById('journal-intentions').value;
-
-            if (!energy.trim() && !intentions.trim()) {
-                alert("Please enter your reflections before saving.");
-                return;
-            }
-
-            const combinedFeedback = `Energy/Pains: ${energy}. Intentions: ${intentions}.`;
-
-            // Persist server-side (T3-2) as well as locally, so reflections survive a new
-            // device and actually reach the plan generator that was built to read them.
-            await postJournalEntry(energy, intentions);
-
-            let savedEntries = JSON.parse(localStorage.getItem('journalEntries') || '[]');
-            savedEntries.push({ date: new Date().toISOString(), entry: combinedFeedback, energy, intentions });
-            localStorage.setItem('journalEntries', JSON.stringify(savedEntries));
-
-            const btn = document.getElementById('btn-submit-journal');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-black" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Recalibrating Plan...</span>`;
+            const btn = document.getElementById('btn-save-note');
+            const original = btn.innerHTML;
+            btn.innerHTML = 'Saving...';
             btn.disabled = true;
 
             try {
-                // We use the same recalibrate endpoint but pass the combined journal entry as feedback
-                const response = await fetch('/api/recalibrate-plan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-                    body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback: combinedFeedback, workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]') })
-                });
+                const saved = await postJournalEntry(note);
 
-                if (!response.ok) {
-                    const error = await response.json();
-                    alert("Error: " + (error.error || "Failed to recalibrate plan."));
-                    return;
+                const entries = JSON.parse(localStorage.getItem('journalEntries') || '[]');
+                entries.push({ date: new Date().toISOString(), note, entry: note });
+                localStorage.setItem('journalEntries', JSON.stringify(entries));
+
+                box.value = '';
+                renderJournalEntries();
+
+                if (!saved) {
+                    alert('Saved on this device, but could not reach the server. It will sync next time you open the app.');
                 }
-
-                const plan = await response.json();
-
-                if (currentWorkoutPlan && currentWorkoutPlan.days) {
-                    plan.days.forEach((newDay, idx) => {
-                        if (currentWorkoutPlan.days[idx] && currentWorkoutPlan.days[idx].completed) {
-                            newDay.completed = true;
-                        }
-                    });
-                }
-
-                console.log("RECALIBRATED PLAN FROM JOURNAL:", plan);
-                currentWorkoutPlan = plan; // Update state
-                localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
-
-                renderPlan(plan);
-                document.getElementById('journal-energy').value = '';
-                document.getElementById('journal-intentions').value = '';
-                alert("Journal saved and plan updated!");
-                nav('screen-plan', 'nav-plan');
-            } catch (err) {
-                console.error(err);
-                alert("Network error.");
+            } catch (e) {
+                alert('Could not save that note.');
             } finally {
-                btn.innerHTML = originalText;
+                btn.innerHTML = original;
                 btn.disabled = false;
             }
+        }
+
+        function renderJournalEntries() {
+            const container = document.getElementById('journal-entries');
+            if (!container) return;
+
+            let entries = [];
+            try { entries = JSON.parse(localStorage.getItem('journalEntries') || '[]'); } catch (e) { entries = []; }
+
+            if (!entries.length) {
+                container.innerHTML = '<p class="text-xs text-textMuted italic">No notes yet.</p>';
+                return;
+            }
+
+            // Newest first for reading, though they are stored oldest-first.
+            container.innerHTML = entries.slice().reverse().map(e => {
+                const text = e.note || e.entry || '';
+                const when = e.date ? new Date(e.date) : null;
+                const stamp = when && !isNaN(when)
+                    ? when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                    : '';
+                const week = e.weekNumber ? ' · Week ' + e.weekNumber : '';
+                return `
+                <div class="bg-surface border border-borderSubtle rounded-[20px] p-5">
+                    <div class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-2">${escapeHtml(stamp)}${escapeHtml(week)}</div>
+                    <p class="text-sm text-textMain leading-relaxed whitespace-pre-wrap">${escapeHtml(text)}</p>
+                </div>`;
+            }).join('');
         }
 
         if ('serviceWorker' in navigator) {

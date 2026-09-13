@@ -195,12 +195,33 @@ function installPgShim(pglite) {
 
     console.log('\n=== T3-14: journal entries persist server-side (fixes T3-2) ===\n');
 
-    await repo.appendJournalEntry(userId, { cycleId: cycle2.id, weekNumber: 1, energy: 'Good', intentions: 'Add volume' });
-    await repo.appendJournalEntry(userId, { cycleId: cycle2.id, weekNumber: 2, energy: 'Tired', intentions: 'Deload' });
-    const entries = await repo.getJournalEntries(userId);
+    await repo.appendJournalEntry(userId, { cycleId: cycle2.id, weekNumber: 1, note: 'Felt strong. Shoulder fine.' });
+    await repo.appendJournalEntry(userId, { cycleId: cycle2.id, weekNumber: 2, note: 'Tired, sleeping badly.' });
+    let entries = await repo.getJournalEntries(userId);
     check('both entries stored', entries.length, 2);
-    check('oldest first', entries[0].energy, 'Good');
-    check('combined string built for the prompts', /Energy\/Pains: Tired/.test(entries[1].entry), true);
+    check('oldest first', entries[0].note, 'Felt strong. Shoulder fine.');
+    check('note reaches the prompts', entries[1].entry, 'Tired, sleeping badly.');
+    check('week number preserved', entries[1].weekNumber, 2);
+
+    // Entries written before migration 003 have energy/intentions and no note. They must still
+    // appear -- a data-preserving migration that leaves old writing invisible has preserved
+    // nothing that matters.
+    await pg.query(
+        `INSERT INTO journal_entries (user_id, cycle_id, week_number, energy, intentions, note)
+         VALUES ($1, $2, 1, 'Legacy energy', 'Legacy intentions', NULL)`,
+        [userId, cycle2.id]
+    );
+    entries = await repo.getJournalEntries(userId);
+    const legacy = entries.find(e => /Legacy energy/.test(e.note || ''));
+    check('pre-003 entry still surfaces', !!legacy, true);
+    check('pre-003 entry keeps both halves', /Legacy intentions/.test(legacy.note), true);
+
+    const cols = await pg.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name='journal_entries'"
+    );
+    const colNames = cols.rows.map(r => r.column_name);
+    check('003 added the note column', colNames.includes('note'), true);
+    check('003 kept the old columns', colNames.includes('energy') && colNames.includes('intentions'), true);
 
     console.log('\n=== T3-14: cascade behaviour ===\n');
 

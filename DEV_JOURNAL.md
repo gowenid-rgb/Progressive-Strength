@@ -456,7 +456,7 @@ A year of training is not much data, but recomputing it on every AI call is wast
 
 ---
 
-## 6. T3-13a — Journal becomes a capture log · `OPEN`
+## 6. T3-13a — Journal becomes a capture log · `SHIPPED` 2026-09-12
 
 **Complexity: low.** Contains a live bug fix.
 
@@ -574,7 +574,7 @@ Two reorderings fall out of that, and both are the opposite of the complexity ra
 | 3 | `T3-11` variable cycles | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
 | 4 | `T3-9` exercise swap | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
 | 5 | `T3-10` metrics + aggregates | Needs normalised sets **and** real history to display | `T3-14`, `T3-11` |
-| 6 | `T3-13a` journal capture log | Small, and removes a live silent-write bug | `T3-14` |
+| 6 | `T3-13a` journal capture log | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
 | 7 | `T3-13b` read-only coach | Needs history and notes; aggregates optional | `T3-13a` |
 | 8 | `T3-12` long-term AI review | Reads `T3-10` aggregates, not raw logs | `T3-10` |
 
@@ -1271,3 +1271,32 @@ queries now break ties on `id`. Latent since `T3-14`, nothing to do with this fe
 
 Suite is now **253 assertions across eight files**. Verified in the browser at 375x812: picker,
 scope step, and the applied swap with its "Swapped from Pull Ups" badge.
+
+### 2026-09-12 — T3-13a shipped: Journal is capture, and the recalibrate bug is gone
+
+The Journal is one free-text field, a Save that only saves, and a timestamped log of previous
+notes. **No AI call, and no write access to programming.** The `/api/recalibrate-plan` call is
+removed: writing a reflection no longer rewrites the week.
+
+Migration 003 adds `journal_entries.note`, backfilling from `energy`/`intentions` with
+`concat_ws` and **keeping both old columns**. A data-preserving migration that leaves old writing
+invisible has preserved nothing that matters, so `getJournalEntries` falls back to the old columns
+when `note` is null, and there is a test for exactly that.
+
+`/api/journal` still accepts `{energy, intentions}` as well as `{note}`. A PWA caches its own
+shell, so a phone that has not refreshed is still running the old client — and silently failing to
+save someone's notes is a bad way to find that out. Covered by a test that posts the pre-`T3-13a`
+payload.
+
+**Sequencing note worth keeping.** Asked whether to do the bug or the Metrics rewrite first, the
+deciding argument was not "bugs first". Both items depend on accumulated data, but in opposite
+directions: **Metrics consumes history, notes create it.** Every day the capture log is delayed is
+context the coach and `T3-12` will never have, while every day Metrics is delayed makes it easier
+to build and judge. Waiting works for one and against the other.
+
+**A recurring process failure worth naming.** Three times now a patch script has failed partway and
+the `&&` chain after it printed a reassuring "none (good)" from the `||` fallback — output that
+looked like verification and was nothing of the sort. Same shape as the app bugs this project keeps
+finding: a success message not backed by the thing it claims. Checks now run as separate commands.
+
+Suite is now **266 assertions across eight files**. Verified at 375x812.

@@ -145,15 +145,21 @@ function req(method, p, body, token) {
 
     console.log('\n=== T3-14 integration: journal entries persist (T3-2) ===\n');
 
-    const j = await req('POST', '/api/journal', { energy: 'Strong all week', intentions: 'Push volume' }, token);
+    const j = await req('POST', '/api/journal', { note: 'Strong all week. Left shoulder a bit tight on pressing.' }, token);
     check('journal entry accepted', j.status, 201);
 
-    const blank = await req('POST', '/api/journal', { energy: '   ', intentions: '' }, token);
+    const blank = await req('POST', '/api/journal', { note: '   ' }, token);
     check('empty journal entry rejected', blank.status, 400);
 
+    // A client cached from before T3-13a still sends energy/intentions. It must keep working
+    // rather than silently failing to save someone's notes.
+    const legacyClient = await req('POST', '/api/journal', { energy: 'Old client', intentions: 'Still works' }, token);
+    check('pre-T3-13a client payload still accepted', legacyClient.status, 201);
+
     data = await req('GET', '/api/user/data', undefined, token);
-    check('entry returned to the client', data.body.journalEntries.length, 1);
-    check('entry content intact', data.body.journalEntries[0].energy, 'Strong all week');
+    check('entries returned to the client', data.body.journalEntries.length, 2);
+    check('entry content intact', /Left shoulder a bit tight/.test(data.body.journalEntries[0].note), true);
+    check('legacy payload folded into one note', /Old client/.test(data.body.journalEntries[1].note), true);
 
     console.log('\n=== T3-14 integration: reset retires the cycle but keeps history ===\n');
 

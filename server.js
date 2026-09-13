@@ -1,4 +1,6 @@
-require('dotenv').config();
+// Loads .env and hard-fails on missing required vars. Must come first: every module
+// below assumes process.env is already populated.
+require('./config');
 const express = require('express');
 const path = require('path');
 const { GoogleGenAI } = require('@google/genai');
@@ -42,7 +44,28 @@ app.get('/api/user/data', authenticateToken, async (req, res) => {
 app.post('/api/user/data', authenticateToken, async (req, res) => {
     try {
         const { currentPlan, workoutJournal } = req.body;
-        await db.query('UPDATE user_data SET current_plan = $1, workout_journal = $2 WHERE user_id = $3', [currentPlan ? JSON.stringify(currentPlan) : null, JSON.stringify(workoutJournal || []), req.user.id]);
+
+        // Upsert rather than UPDATE: an UPDATE against a missing row affects zero rows
+        // and reports success, silently discarding the user's data forever.
+        const result = await db.query(
+            `INSERT INTO user_data (user_id, current_plan, workout_journal)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (user_id) DO UPDATE
+                SET current_plan     = EXCLUDED.current_plan,
+                    workout_journal  = EXCLUDED.workout_journal`,
+            [
+                req.user.id,
+                currentPlan ? JSON.stringify(currentPlan) : null,
+                JSON.stringify(workoutJournal || [])
+            ]
+        );
+
+        // A save that wrote nothing must never report success.
+        if (result.rowCount !== 1) {
+            console.error(`Save for user ${req.user.id} affected ${result.rowCount} rows, expected 1`);
+            return res.status(500).json({ error: 'Save did not persist' });
+        }
+
         res.json({ success: true });
     } catch (err) {
         console.error(err);

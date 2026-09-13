@@ -62,6 +62,42 @@ async function advanceCycleWeek(cycleId) {
     return r.rows[0] || null;
 }
 
+/**
+ * Records a permanent substitution on the active cycle (T3-9, decision D6).
+ *
+ * Replaces any existing entry for the same `from` movement rather than appending, so swapping
+ * A->B and later A->C leaves one rule, not two contradictory ones. Also collapses chains:
+ * if the user previously swapped A->B and now swaps B->C, the A rule is retargeted to C so
+ * the prompt never carries a stale intermediate.
+ */
+async function addSubstitution(cycleId, from, to) {
+    return db.withTransaction(async client => {
+        const r = await client.query('SELECT substitutions FROM cycles WHERE id = $1 FOR UPDATE', [cycleId]);
+        if (r.rows.length === 0) return null;
+
+        const list = Array.isArray(r.rows[0].substitutions) ? r.rows[0].substitutions : [];
+        const same = a => String(a || '').trim().toLowerCase();
+
+        const next = list
+            .filter(x => same(x.from) !== same(from))
+            .map(x => (same(x.to) === same(from) ? Object.assign({}, x, { to }) : x));
+
+        next.push({ from, to, createdAt: new Date().toISOString() });
+
+        const saved = await client.query(
+            'UPDATE cycles SET substitutions = $2 WHERE id = $1 RETURNING substitutions',
+            [cycleId, JSON.stringify(next)]
+        );
+        return saved.rows[0].substitutions;
+    });
+}
+
+async function getSubstitutions(cycleId) {
+    const r = await db.query('SELECT substitutions FROM cycles WHERE id = $1', [cycleId]);
+    if (r.rows.length === 0) return [];
+    return Array.isArray(r.rows[0].substitutions) ? r.rows[0].substitutions : [];
+}
+
 async function endActiveCycle(userId, status = 'abandoned') {
     const r = await db.query(
         `UPDATE cycles SET status = $2, completed_at = now()
@@ -178,7 +214,10 @@ async function appendWorkout(userId, workout) {
  */
 async function getWorkoutHistory(userId, limit = 50) {
     const ws = await db.query(
-        `SELECT * FROM workouts WHERE user_id = $1 ORDER BY finished_at DESC LIMIT $2`,
+        // id breaks ties: two sessions logged in the same instant share a finished_at, and
+        // without a deterministic tiebreak their order — and the "Prev" lookup that walks
+        // this array — becomes arbitrary.
+        `SELECT * FROM workouts WHERE user_id = $1 ORDER BY finished_at DESC, id DESC LIMIT $2`,
         [userId, limit]
     );
     if (ws.rows.length === 0) return [];
@@ -233,7 +272,7 @@ async function appendJournalEntry(userId, entry) {
 
 async function getJournalEntries(userId, limit = 20) {
     const r = await db.query(
-        `SELECT * FROM journal_entries WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+        `SELECT * FROM journal_entries WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
         [userId, limit]
     );
     return r.rows.reverse().map(e => ({
@@ -249,6 +288,7 @@ async function getJournalEntries(userId, limit = 20) {
 
 module.exports = {
     getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek,
+    addSubstitution, getSubstitutions,
     saveWeekPlan, getWeekPlan,
     appendWorkout, getWorkoutHistory,
     appendJournalEntry, getJournalEntries

@@ -8,6 +8,7 @@
     <meta name="theme-color" content="#000000">
     <link rel="apple-touch-icon" href="/icon-192.jpg">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/exercises.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
@@ -851,13 +852,16 @@
                     }
 
                     container.innerHTML += `
-                    <div class="bg-surface rounded-[24px] border border-borderSubtle overflow-hidden">
-                        <div class="p-5 flex justify-between items-start">
-                            <div>
-                                <h3 class="font-semibold text-lg text-white tracking-tight">${ex.name}</h3>
+                    <div class="bg-surface rounded-[24px] border border-borderSubtle overflow-hidden" data-ex-block="${exIndex}">
+                        <div class="p-5 flex justify-between items-start gap-3">
+                            <div class="min-w-0">
+                                <h3 class="font-semibold text-lg text-white tracking-tight" data-ex-name="${exIndex}">${ex.name}</h3>
                                 <p class="text-[11px] text-textMuted uppercase tracking-widest mt-1 font-semibold">Goal: ${ex.sets} × ${ex.reps} reps</p>
+                                <p class="hidden text-[10px] text-amber-400 uppercase tracking-widest mt-1 font-semibold" data-ex-swapped="${exIndex}"></p>
                             </div>
+                            <button onclick="openSwap(${exIndex})" class="shrink-0 text-[10px] font-bold uppercase tracking-widest text-textMuted hover:text-white bg-surfaceElevated border border-borderSubtle px-3 py-1.5 rounded-full transition-colors">Swap</button>
                         </div>
+                        <div class="hidden px-5 pb-5" data-swap-panel="${exIndex}"></div>
                         <div class="px-5 pb-5">
                             <div class="grid grid-cols-12 gap-2 text-[10px] uppercase tracking-widest text-textMuted mb-3 px-1 text-center font-semibold">
                                 <div class="col-span-1">Set</div>
@@ -885,6 +889,138 @@
 
             nav('screen-active-workout');
         }
+
+        // --- T3-9: swapping a movement mid-workout -------------------------------------
+        //
+        // Alternatives come from a static library (decision D7) so the picker opens instantly
+        // and works offline. An unrecognised movement returns no suggestions and the user types
+        // their own, which is a degraded path rather than a dead end.
+        //
+        // Scope is chosen explicitly (decision D6). "This session" changes only what gets
+        // logged; "rest of the cycle" also rewrites the remaining plan and records a standing
+        // substitution server-side, so weeks generated later honour it too.
+
+        function openSwap(exIndex) {
+            const panel = document.querySelector(`[data-swap-panel="${exIndex}"]`);
+            if (!panel) return;
+
+            if (!panel.classList.contains('hidden')) { closeSwap(exIndex); return; }
+
+            const current = currentWorkoutPlan.days[activeDayIndex].exercises[exIndex].name;
+            const lib = (typeof ExerciseLibrary !== 'undefined') ? ExerciseLibrary : null;
+            const alts = lib ? lib.alternativesFor(current) : [];
+
+            const options = alts.length
+                ? alts.map(a =>
+                    `<button onclick="chooseSwap(${exIndex}, this.dataset.name)" data-name="${escapeAttr(a)}" class="w-full text-left bg-surfaceElevated border border-borderSubtle rounded-xl px-4 py-3 text-sm text-white hover:border-white transition-colors mb-2">${escapeHtml(a)}</button>`
+                  ).join('')
+                : `<p class="text-xs text-textMuted mb-3 leading-relaxed">No suggestions for this movement — type what you are doing instead.</p>`;
+
+            panel.innerHTML = `
+                <div class="border-t border-borderSubtle pt-4">
+                    <p class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Replace ${escapeHtml(current)} with</p>
+                    ${options}
+                    <div class="flex gap-2 mt-1">
+                        <input type="text" data-swap-custom="${exIndex}" placeholder="Enter your own" class="flex-1 bg-surface border border-borderSubtle rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white transition-colors">
+                        <button onclick="chooseSwapCustom(${exIndex})" class="bg-white text-black px-4 rounded-xl text-sm font-semibold hover:bg-gray-200">Use</button>
+                    </div>
+                    <button onclick="closeSwap(${exIndex})" class="mt-3 w-full text-xs text-textMuted hover:text-white py-2">Cancel</button>
+                </div>`;
+            panel.classList.remove('hidden');
+        }
+
+        function closeSwap(exIndex) {
+            const panel = document.querySelector(`[data-swap-panel="${exIndex}"]`);
+            if (!panel) return;
+            panel.classList.add('hidden');
+            panel.innerHTML = '';
+        }
+
+        function chooseSwapCustom(exIndex) {
+            const input = document.querySelector(`[data-swap-custom="${exIndex}"]`);
+            const name = (input && input.value || '').trim();
+            if (!name) return alert('Type the movement you are doing instead.');
+            chooseSwap(exIndex, name);
+        }
+
+        // Second stage: the replacement is picked, now choose how long it applies for. Kept as
+        // a separate step so the consequence is visible at the moment of choosing, rather than
+        // hidden behind a checkbox the user has to notice.
+        function chooseSwap(exIndex, replacement) {
+            const panel = document.querySelector(`[data-swap-panel="${exIndex}"]`);
+            if (!panel) return;
+            const current = currentWorkoutPlan.days[activeDayIndex].exercises[exIndex].name;
+
+            panel.innerHTML = `
+                <div class="border-t border-borderSubtle pt-4">
+                    <p class="text-sm text-white mb-1">${escapeHtml(current)} → <span class="font-semibold">${escapeHtml(replacement)}</span></p>
+                    <p class="text-xs text-textMuted mb-4 leading-relaxed">How long should this apply?</p>
+                    <button onclick="applySwap(${exIndex}, this.dataset.name, false)" data-name="${escapeAttr(replacement)}" class="w-full bg-surfaceElevated border border-borderSubtle text-white rounded-xl px-4 py-3 text-sm font-semibold hover:border-white transition-colors mb-2">Just this session</button>
+                    <button onclick="applySwap(${exIndex}, this.dataset.name, true)" data-name="${escapeAttr(replacement)}" class="w-full bg-white text-black rounded-xl px-4 py-3 text-sm font-semibold hover:bg-gray-200">Rest of the cycle</button>
+                    <button onclick="openSwap(${exIndex})" class="mt-3 w-full text-xs text-textMuted hover:text-white py-2">Back</button>
+                </div>`;
+        }
+
+        async function applySwap(exIndex, replacement, persist) {
+            const day = currentWorkoutPlan.days[activeDayIndex];
+            const original = day.exercises[exIndex].name;
+            if (!replacement || replacement === original) { closeSwap(exIndex); return; }
+
+            // Record the original so the log can say what this replaced. Preserve the first
+            // original across repeated swaps: A->B->C should still report that C replaced A.
+            const rootOriginal = day.exercises[exIndex].swappedFrom || original;
+            day.exercises[exIndex].name = replacement;
+            day.exercises[exIndex].swappedFrom = rootOriginal;
+
+            // Suggested weight belonged to the old movement and would be wrong, and worse,
+            // would be logged as the fallback for an untouched set under the old rules.
+            delete day.exercises[exIndex].suggestedWeight;
+
+            const nameEl = document.querySelector(`[data-ex-name="${exIndex}"]`);
+            if (nameEl) nameEl.textContent = replacement;
+            const badge = document.querySelector(`[data-ex-swapped="${exIndex}"]`);
+            if (badge) {
+                badge.textContent = 'Swapped from ' + rootOriginal;
+                badge.classList.remove('hidden');
+            }
+            closeSwap(exIndex);
+
+            if (!persist) return;
+
+            // Rewrite the movement everywhere it still appears in this cycle's remaining days.
+            currentWorkoutPlan.days.forEach(d => {
+                if (d.completed) return;   // finished days are history, not plan
+                (d.exercises || []).forEach(e => {
+                    if (e.name === rootOriginal || e.name === original) {
+                        e.name = replacement;
+                        e.swappedFrom = e.swappedFrom || rootOriginal;
+                        delete e.suggestedWeight;
+                    }
+                });
+            });
+            localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan));
+            await syncData();
+
+            // And record it on the cycle, so weeks generated later are programmed with it.
+            try {
+                const res = await fetch('/api/cycle/substitutions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                    body: JSON.stringify({ from: rootOriginal, to: replacement })
+                });
+                if (!res.ok) throw new Error('save failed');
+            } catch (e) {
+                console.error('Standing substitution not saved:', e);
+                alert('Swapped for this session, but the change could not be saved for future weeks. Try again from the next workout.');
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str == null ? '' : str)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        function escapeAttr(str) { return escapeHtml(str); }
 
         function toggleSet(el) {
             const row = el.closest('.set-row');
@@ -1002,7 +1138,14 @@
             const byExercise = {};
             checked.forEach(row => {
                 if (!byExercise[row.exIndex]) {
-                    byExercise[row.exIndex] = { name: day.exercises[row.exIndex].name, sets: [] };
+                    const ex = day.exercises[row.exIndex];
+                    byExercise[row.exIndex] = {
+                        name: ex.name,
+                        // T3-9: record what this replaced. Without it the AI sees someone who
+                        // silently stopped doing pull-ups, with no idea it was a swap.
+                        swappedFrom: ex.swappedFrom || undefined,
+                        sets: []
+                    };
                 }
                 byExercise[row.exIndex].sets.push({ set: row.set, weight: row.weight, reps: row.reps });
             });

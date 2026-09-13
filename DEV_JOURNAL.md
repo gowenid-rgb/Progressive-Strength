@@ -101,7 +101,7 @@ The second is more likely to succeed but doubles worst-case latency to ~20s.
 
 ---
 
-### T2-2 — Verify the Gemini SDK call · `OPEN`
+### T2-2 — Verify the Gemini SDK call · `RESOLVED 2026-09-12` — call was valid
 
 **Where:** `server.js` — `ai.interactions.create({ model: 'gemini-3.8-flash', input: prompt })`
 
@@ -120,7 +120,7 @@ text. Everything else in Tier 2 is wasted effort if this is broken.
 
 ---
 
-### T2-3 — No rate limiting on AI endpoints · `OPEN`
+### T2-3 — No rate limiting on AI endpoints · `SHIPPED to branch` 2026-09-12
 
 **Where:** `server.js` — `/api/generate-plan`, `/api/recalibrate-plan`, `/api/generate-recap`
 
@@ -135,7 +135,7 @@ allowlist on registration is simpler and strictly more effective than rate limit
 
 ---
 
-### T2-4 — Unauthenticated `/api/models` debug route · `OPEN`
+### T2-4 — Unauthenticated `/api/models` debug route · `SHIPPED to branch` 2026-09-12
 
 **Where:** `server.js:243`
 
@@ -148,7 +148,7 @@ unauthenticated route with no purpose in a deployed app.
 
 ---
 
-### T2-5 — Catch-all route swallows bad API requests · `OPEN`
+### T2-5 — Catch-all route swallows bad API requests · `SHIPPED to branch` 2026-09-12
 
 **Where:** `server.js:260` — `app.get('*', ...)`
 
@@ -479,3 +479,63 @@ deployed. Merging to `main` is what ships it.
 
 **Still outstanding and only doable in the Railway console:** rotate `GEMINI_API_KEY` (`T1-5`),
 and confirm a database backup exists before the merge.
+
+---
+
+### 2026-09-12 — Tier 1 deployed to production; T2-2 through T2-5 done
+
+**Tier 1 is live.** Merge `bf46038` -> Railway deployment `29a718fb`, Active. Logs show
+`Database initialized successfully` and no `FATAL`, so `config.js` validated cleanly and the
+upsert path is running against real Postgres. **The GitHub -> Railway auto-deploy link works** —
+it fired on the push to `main`, answering the question the branch push could not.
+
+Verified live, read-only: homepage 200; the new client code is genuinely served
+(`clearLocalSession`, `hydrateFromServer`, `collectWorkoutRows`, the rescue warning all present;
+`input.placeholder` and `fallback-secret` both absent); no token -> 401; garbage token -> 403; and
+**a token forged with the old public fallback secret -> 403**, confirming the forgery path is shut.
+
+The `pglite` devDependency did not affect the build — Railway installs with production config, so
+dev dependencies are skipped. That earlier concern was unfounded.
+
+**T2-2 resolved, and my original suspicion was wrong.** `ai.interactions.create()` is a real
+method on `@google/genai` 2.21.0, and `gemini-3.8-flash` is a real model — confirmed against the
+live model list, which returned 50 models including it. Nothing was broken.
+
+The one genuine defect was the response read: `response.outputText || response.output_text ||
+response.text`. Only `output_text` exists on the `Interaction` type. The other two operands were
+always undefined, so an SDK change would have yielded `undefined` and thrown deep inside
+`JSON.parse` with a useless message. Replaced with a single `readModelText()` that fails loudly
+and logs the actual response keys.
+
+**Found while reading the SDK types — a much better fix for `T2-1`.** The API supports
+schema-enforced JSON:
+
+```js
+response_format: { type: 'text', mime_type: 'application/json', schema: { ...JSON Schema... } }
+```
+
+That removes the entire failure class `T2-1` describes: no markdown fences to strip, no
+prompt-begging for raw JSON, and shape guaranteed by the API rather than by hope. It supersedes
+the regex-extraction approach originally proposed. Not yet implemented — it changes the request
+shape and wants a live call to confirm, which needs a key.
+
+**T2-3 shipped.** `rateLimits.js` adds a burst cap (10 / 15 min) and a daily cap (40 / 24h) on the
+three AI routes, keyed by **user id** rather than IP — these sit behind auth, and IP keying would
+punish shared NATs while being trivial to evade. Auth routes get an IP-keyed limiter (20 / 15 min),
+since those genuinely have no user yet. All tunable via env.
+
+**T2-4 shipped, and hardened past the original plan.** `/api/models` is behind `authenticateToken`
+and now **fails closed**: it requires `NODE_ENV === 'development'` rather than merely being absent
+in production, because we cannot rely on `NODE_ENV` being set everywhere. First draft had it
+backwards and would have left the route live wherever that variable was unset.
+
+**T2-5 shipped.** An `/api` 404 handler mounted above the SPA catch-all returns JSON, so a wrong
+endpoint no longer returns `index.html` with a 200 for the client to choke on.
+
+**Test suite is now 76 assertions across three files.** The new `test/ratelimit.test.js` boots the
+real server in-process on an ephemeral port and drives it over HTTP, so middleware *ordering* is
+genuinely exercised rather than assumed — it needs neither a database nor a Gemini key, because
+every route under test must reject before reaching either.
+
+**`T1-5` (rotate `GEMINI_API_KEY`) is still open.** Rate limiting caps the damage but does not
+revoke the exposed key. Requires Google AI Studio access.

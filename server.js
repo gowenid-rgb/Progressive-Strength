@@ -7,6 +7,7 @@ const { GoogleGenAI } = require('@google/genai');
 const db = require('./db');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
+const { aiLimiters, authLimiter } = require('./rateLimits');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,8 +25,21 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// The SDK returns the concatenated model text on `output_text` (snake_case). Earlier code
+// read `outputText || output_text || text`; the first and third never exist on this type, so
+// a genuine SDK change would have silently produced undefined and thrown deep inside
+// JSON.parse. Read the one real field and fail with a clear message instead.
+function readModelText(response) {
+    const text = response && response.output_text;
+    if (typeof text !== 'string' || text.trim() === '') {
+        console.error('Unexpected model response shape:', Object.keys(response || {}));
+        throw new Error('Model returned no text output');
+    }
+    return text;
+}
+
 // Authentication Routes
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 
 // User Data Sync Endpoints
 app.get('/api/user/data', authenticateToken, async (req, res) => {
@@ -74,7 +88,7 @@ app.post('/api/user/data', authenticateToken, async (req, res) => {
 });
 
 // Endpoint to generate a workout plan
-app.post('/api/generate-plan', authenticateToken, async (req, res) => {
+app.post('/api/generate-plan', authenticateToken, aiLimiters, async (req, res) => {
     try {
         const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails, workoutHistory, journalEntries } = req.body;
 
@@ -129,7 +143,7 @@ Schema requirement:
             input: prompt
         });
 
-        let textResult = response.outputText || response.output_text || response.text;
+        let textResult = readModelText(response);
         
         // Strip markdown if the AI accidentally includes it
         if (textResult.startsWith('\`\`\`json')) {
@@ -147,7 +161,7 @@ Schema requirement:
 });
 
 // Endpoint to recalibrate an existing workout plan
-app.post('/api/recalibrate-plan', authenticateToken, async (req, res) => {
+app.post('/api/recalibrate-plan', authenticateToken, aiLimiters, async (req, res) => {
     try {
         const { currentPlan, feedback, workoutHistory } = req.body;
 
@@ -198,7 +212,7 @@ Schema requirement:
             input: prompt
         });
 
-        let textResult = response.outputText || response.output_text || response.text;
+        let textResult = readModelText(response);
         
         // Strip markdown if the AI accidentally includes it
         if (textResult.startsWith('\`\`\`json')) {
@@ -216,7 +230,7 @@ Schema requirement:
 });
 
 // Endpoint to generate a weekly recap
-app.post('/api/generate-recap', authenticateToken, async (req, res) => {
+app.post('/api/generate-recap', authenticateToken, aiLimiters, async (req, res) => {
     try {
         const { workoutHistory } = req.body;
 
@@ -247,7 +261,7 @@ Schema requirement:
             input: prompt
         });
 
-        let textResult = response.outputText || response.output_text || response.text;
+        let textResult = readModelText(response);
         
         if (textResult.startsWith('\`\`\`json')) {
             textResult = textResult.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '');
@@ -263,7 +277,13 @@ Schema requirement:
 });
 
 // Endpoint to list available models for debugging
-app.get('/api/models', (req, res) => {
+app.get('/api/models', authenticateToken, (req, res) => {
+    // Debug aid only. It was previously unauthenticated, which let anyone enumerate the
+    // models this key can reach. Behind auth now, and OFF unless explicitly in development --
+    // fail closed, because we cannot rely on NODE_ENV being set in every environment.
+    if (process.env.NODE_ENV !== 'development') {
+        return res.status(404).json({ error: 'Not found' });
+    }
     const https = require('https');
     https.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`, (apiRes) => {
         let data = '';
@@ -278,6 +298,12 @@ app.get('/api/models', (req, res) => {
     }).on("error", (err) => {
         res.status(500).json({ error: err.message });
     });
+});
+
+// Must precede the SPA catch-all: an unknown API route should be an honest 404, not an
+// HTML document that the client fails to parse and reports as a network error.
+app.use('/api', (req, res) => {
+    res.status(404).json({ error: 'Unknown API endpoint: ' + req.method + ' /api' + req.path });
 });
 
 app.get('*', (req, res) => {

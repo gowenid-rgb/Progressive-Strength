@@ -259,6 +259,29 @@ async function getWorkoutHistory(userId, limit = 50) {
     }));
 }
 
+/* ----------------------------------------------------------------- metrics */
+
+/**
+ * Every logged set joined to its session, for the aggregate layer.
+ *
+ * One flat query rather than per-period aggregates in SQL. At this scale — a year of hard
+ * training is a few thousand rows — the difference is immaterial, and it keeps the maths in
+ * a pure JS function that can be tested exhaustively without a database.
+ */
+async function getSetsForMetrics(userId) {
+    const r = await db.query(
+        `SELECT w.id AS workout_id, w.finished_at, w.cycle_id, w.week_number,
+                s.exercise_name, s.weight_value, s.weight_unit, s.is_bodyweight,
+                s.reps_value, s.swapped_from
+           FROM workouts w
+           JOIN workout_sets s ON s.workout_id = w.id
+          WHERE w.user_id = $1
+          ORDER BY w.finished_at ASC, w.id ASC, s.exercise_order ASC, s.set_number ASC`,
+        [userId]
+    );
+    return r.rows;
+}
+
 /* ---------------------------------------------------------- journal entries */
 
 async function appendJournalEntry(userId, entry) {
@@ -292,6 +315,6 @@ module.exports = {
     getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek,
     addSubstitution, getSubstitutions,
     saveWeekPlan, getWeekPlan,
-    appendWorkout, getWorkoutHistory,
+    appendWorkout, getWorkoutHistory, getSetsForMetrics,
     appendJournalEntry, getJournalEntries
 };

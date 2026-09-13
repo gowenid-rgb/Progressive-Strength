@@ -119,16 +119,22 @@ app.post('/api/workouts', authenticateToken, async (req, res) => {
 // Check-in reflections, finally stored server-side (T3-2).
 app.post('/api/journal', authenticateToken, async (req, res) => {
     try {
-        const { energy, intentions } = req.body || {};
-        if (!String(energy || '').trim() && !String(intentions || '').trim()) {
-            return res.status(400).json({ error: 'Entry is empty' });
-        }
+        // Accepts `note`; `energy`/`intentions` are still read so a client cached from before
+        // T3-13a keeps working rather than silently failing to save.
+        const body = req.body || {};
+        const note = String(
+            body.note !== undefined
+                ? body.note
+                : [body.energy, body.intentions].filter(Boolean).join('\n\n')
+        ).trim();
+
+        if (!note) return res.status(400).json({ error: 'Entry is empty' });
 
         const cycle = await repo.getActiveCycle(req.user.id);
         const saved = await repo.appendJournalEntry(req.user.id, {
             cycleId: cycle ? cycle.id : null,
             weekNumber: cycle ? cycle.current_week : null,
-            energy, intentions
+            note
         });
 
         res.status(201).json({ success: true, entryId: saved.id });

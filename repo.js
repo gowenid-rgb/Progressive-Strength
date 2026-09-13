@@ -263,9 +263,9 @@ async function getWorkoutHistory(userId, limit = 50) {
 
 async function appendJournalEntry(userId, entry) {
     const r = await db.query(
-        `INSERT INTO journal_entries (user_id, cycle_id, week_number, energy, intentions)
-         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [userId, entry.cycleId || null, entry.weekNumber || null, entry.energy || null, entry.intentions || null]
+        `INSERT INTO journal_entries (user_id, cycle_id, week_number, note)
+         VALUES ($1,$2,$3,$4) RETURNING *`,
+        [userId, entry.cycleId || null, entry.weekNumber || null, entry.note || null]
     );
     return r.rows[0];
 }
@@ -276,13 +276,15 @@ async function getJournalEntries(userId, limit = 20) {
         [userId, limit]
     );
     return r.rows.reverse().map(e => ({
+        id: e.id,
         date: e.created_at,
         weekNumber: e.week_number,
-        energy: e.energy,
-        intentions: e.intentions,
-        // The prompts consume a single combined string; keep that shape here so the route
-        // handlers do not each reinvent it.
-        entry: `Energy/Pains: ${e.energy || ''}. Intentions: ${e.intentions || ''}.`
+        // Entries written before migration 003 have energy/intentions and no note. Fall back
+        // rather than showing a blank row -- old writing still counts.
+        note: e.note || [e.energy, e.intentions].filter(Boolean).join('\n\n') || '',
+        // The prompts consume a single string; keep that shape here so route handlers do not
+        // each reinvent it.
+        entry: e.note || [e.energy, e.intentions].filter(Boolean).join(' ') || ''
     }));
 }
 

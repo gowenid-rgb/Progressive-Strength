@@ -286,7 +286,7 @@
 
         // Every key this app owns in localStorage. Listed once so nothing is missed when
         // clearing a session - a key left behind leaks into the next account on this browser.
-        const SESSION_KEYS = ['token', 'currentWorkoutPlan', 'workoutJournal', 'journalEntries'];
+        const SESSION_KEYS = ['token', 'currentWorkoutPlan', 'workoutJournal', 'journalEntries', 'activeWorkout'];
 
         function clearLocalSession() {
             SESSION_KEYS.forEach(k => localStorage.removeItem(k));
@@ -428,6 +428,8 @@
                 if (currentWorkoutPlan) {
                     renderPlan(currentWorkoutPlan);
                     nav('screen-plan', 'nav-plan');
+                    // Takes over the screen if a workout was interrupted.
+                    restoreActiveWorkout();
                 } else {
                     nav('screen-onboarding');
                 }
@@ -932,7 +934,8 @@
             </div>`;
         }
 
-        function startWorkout(dayIndex) {
+        function startWorkout(dayIndex, opts) {
+            opts = opts || {};
             activeDayIndex = dayIndex;
             const day = currentWorkoutPlan.days[dayIndex];
 
@@ -975,7 +978,7 @@
                             <div class="col-span-3"><input type="text" inputmode="numeric" data-ex="${exIndex}" data-set="${s}" class="workout-weight w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${defaultWeight}"></div>
                             <div class="col-span-3"><input type="text" inputmode="numeric" data-ex="${exIndex}" data-set="${s}" class="workout-reps w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${ex.reps}"></div>
                             <div class="col-span-2 flex justify-center">
-                                <div onclick="toggleSet(this)" class="w-6 h-6 rounded-full border border-textMuted hover:border-white cursor-pointer transition-colors flex items-center justify-center text-transparent">✓</div>
+                                <div data-toggle-set onclick="toggleSet(this)" class="w-6 h-6 rounded-full border border-textMuted hover:border-white cursor-pointer transition-colors flex items-center justify-center text-transparent">✓</div>
                             </div>
                         </div>`;
                     }
@@ -1005,18 +1008,37 @@
                 });
             }
 
-            workoutStartTime = Date.now();
+            // Resuming keeps the original start time, so the timer shows real elapsed time
+            // rather than restarting from zero.
+            workoutStartTime = opts.resumeFrom ? (opts.resumeFrom.startedAt || Date.now()) : Date.now();
+
+            // Assignment rather than addEventListener: startWorkout runs again on every
+            // resume and on every new session, and listeners would stack.
+            container.oninput = saveActiveWorkout;
+
+            if (opts.resumeFrom) applySnapshotValues(opts.resumeFrom);
+
             if (workoutTimerInterval) clearInterval(workoutTimerInterval);
-            document.getElementById('active-workout-timer').innerText = '00:00:00';
-            workoutTimerInterval = setInterval(() => {
-                const diff = Math.floor((Date.now() - workoutStartTime) / 1000);
+
+            // Tick once before starting the interval. On a resumed workout, hardcoding
+            // 00:00:00 here flashed a zeroed timer for a second before jumping to the real
+            // elapsed time -- which looks exactly like the progress loss this is meant to
+            // prevent.
+            const tickTimer = () => {
+                const diff = Math.max(0, Math.floor((Date.now() - workoutStartTime) / 1000));
                 const h = String(Math.floor(diff / 3600)).padStart(2, '0');
                 const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
                 const s = String(diff % 60).padStart(2, '0');
                 document.getElementById('active-workout-timer').innerText = `${h}:${m}:${s}`;
-            }, 1000);
+            };
+            tickTimer();
+            workoutTimerInterval = setInterval(tickTimer, 1000);
 
             nav('screen-active-workout');
+
+            // Snapshot immediately, so a reload thirty seconds in still lands back here even
+            // if nothing has been typed yet.
+            saveActiveWorkout();
         }
 
         // --- T3-9: swapping a movement mid-workout -------------------------------------
@@ -1113,6 +1135,7 @@
                 badge.classList.remove('hidden');
             }
             closeSwap(exIndex);
+            saveActiveWorkout();
 
             if (!persist) return;
 
@@ -1151,6 +1174,126 @@
         }
         function escapeAttr(str) { return escapeHtml(str); }
 
+        // --- in-progress workout snapshot ------------------------------------------------
+        //
+        // Everything about an active workout used to live in memory and in DOM inputs, so a
+        // reload lost the session: every weight, every rep, every checkmark, and the timer.
+        // On a phone in a gym that is not a hypothetical -- the OS evicts backgrounded tabs,
+        // and a lock screen long enough will do it.
+        //
+        // Snapshot on every keystroke and every checkmark. Writing to localStorage is cheap
+        // and this is the data the whole app exists to collect.
+
+        const ACTIVE_WORKOUT_KEY = 'activeWorkout';
+
+        // Beyond this, a workout is not "in progress" -- it is abandoned. Resuming silently
+        // would attach today's sets to a session from two days ago.
+        const RESUME_AUTO_HOURS = 6;
+
+        function saveActiveWorkout() {
+            if (!currentWorkoutPlan || workoutStartTime === null) return;
+            const day = currentWorkoutPlan.days[activeDayIndex];
+            if (!day) return;
+
+            const rows = [];
+            document.querySelectorAll('#active-workout-exercises .set-row').forEach(row => {
+                const w = row.querySelector('.workout-weight');
+                const r = row.querySelector('.workout-reps');
+                if (!w || !r) return;
+                rows.push({
+                    ex: parseInt(w.getAttribute('data-ex'), 10),
+                    set: w.getAttribute('data-set'),
+                    weight: w.value,
+                    reps: r.value,
+                    done: row.dataset.done === 'true'
+                });
+            });
+
+            try {
+                localStorage.setItem(ACTIVE_WORKOUT_KEY, JSON.stringify({
+                    dayIndex: activeDayIndex,
+                    startedAt: workoutStartTime,
+                    savedAt: Date.now(),
+                    // Session-only swaps live only in memory, so without capturing names here
+                    // a reload would put restored sets back under the original movement.
+                    exercises: (day.exercises || []).map(e => ({
+                        name: e.name,
+                        swappedFrom: e.swappedFrom || null
+                    })),
+                    sets: rows
+                }));
+            } catch (e) {
+                // Storage full or blocked. The workout still works in memory; losing the
+                // safety net is not a reason to interrupt someone mid-set.
+                console.warn('Could not snapshot the workout:', e);
+            }
+        }
+
+        function clearActiveWorkout() {
+            try { localStorage.removeItem(ACTIVE_WORKOUT_KEY); } catch (e) {}
+        }
+
+        function readActiveWorkout() {
+            try {
+                const raw = localStorage.getItem(ACTIVE_WORKOUT_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) { return null; }
+        }
+
+        // Called after the plan is hydrated on boot. Returns true if it took over the screen.
+        function restoreActiveWorkout() {
+            const snap = readActiveWorkout();
+            if (!snap || !currentWorkoutPlan || !Array.isArray(currentWorkoutPlan.days)) return false;
+
+            const day = currentWorkoutPlan.days[snap.dayIndex];
+            if (!day) { clearActiveWorkout(); return false; }
+
+            // A day finished on another device is no longer resumable here.
+            if (day.completed) { clearActiveWorkout(); return false; }
+
+            const savedAt = snap.savedAt || snap.startedAt || 0;
+            const ageHours = (Date.now() - savedAt) / 3600000;
+            if (ageHours > RESUME_AUTO_HOURS) {
+                const when = new Date(savedAt).toLocaleString();
+                const ok = confirm(
+                    'You have an unfinished ' + (day.dayName || 'workout') + ' from ' + when + '.'
+                    + String.fromCharCode(10) + String.fromCharCode(10)
+                    + 'OK to pick it up where you left off, or Cancel to discard it.'
+                );
+                if (!ok) { clearActiveWorkout(); return false; }
+            }
+
+            // Reapply session-only swaps before rendering, or restored rows land under the
+            // original exercise names.
+            if (Array.isArray(snap.exercises)) {
+                snap.exercises.forEach((e, i) => {
+                    if (day.exercises[i] && e && e.name) {
+                        day.exercises[i].name = e.name;
+                        if (e.swappedFrom) day.exercises[i].swappedFrom = e.swappedFrom;
+                    }
+                });
+            }
+
+            startWorkout(snap.dayIndex, { resumeFrom: snap });
+            return true;
+        }
+
+        function applySnapshotValues(snap) {
+            (snap.sets || []).forEach(entry => {
+                const w = document.querySelector('.workout-weight[data-ex="' + entry.ex + '"][data-set="' + entry.set + '"]');
+                const r = document.querySelector('.workout-reps[data-ex="' + entry.ex + '"][data-set="' + entry.set + '"]');
+                if (w) w.value = entry.weight || '';
+                if (r) r.value = entry.reps || '';
+                if (entry.done && w && w.closest) {
+                    const row = w.closest('.set-row');
+                    if (row && row.dataset.done !== 'true') {
+                        const toggle = row.querySelector('[data-toggle-set]');
+                        if (toggle) toggleSet(toggle);
+                    }
+                }
+            });
+        }
+
         function toggleSet(el) {
             const row = el.closest('.set-row');
 
@@ -1170,6 +1313,8 @@
 
             // Resolving a row clears any warning highlight left by a previous finish attempt.
             row.classList.remove('ring-2', 'ring-amber-400');
+
+            saveActiveWorkout();
         }
 
         // Sorts every set row in the active workout into what gets logged and what is ambiguous.
@@ -1215,6 +1360,8 @@
         function cancelWorkout() {
             if (!confirm("Exit workout? Current progress will be discarded.")) return;
             if (workoutTimerInterval) clearInterval(workoutTimerInterval);
+            clearActiveWorkout();
+            workoutStartTime = null;
             nav('screen-plan', 'nav-plan');
         }
 
@@ -1241,6 +1388,8 @@
                     return;
                 }
                 if (workoutTimerInterval) clearInterval(workoutTimerInterval);
+                clearActiveWorkout();
+                workoutStartTime = null;
                 nav('screen-plan', 'nav-plan');
                 return;
             }
@@ -1303,6 +1452,10 @@
             if (!saved) {
                 alert('Workout saved on this device, but could not reach the server. It will sync next time you open the app.');
             }
+
+            // Only after the workout is safely recorded.
+            clearActiveWorkout();
+            workoutStartTime = null;
 
             alert('Workout saved - ' + checked.length + ' ' + (checked.length === 1 ? 'set' : 'sets') + ' logged.');
             renderPlan(currentWorkoutPlan);

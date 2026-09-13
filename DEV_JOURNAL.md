@@ -1340,3 +1340,36 @@ authenticated and rate-limited in the meantime.
 
 Suite is now **313 assertions across nine files**. Verified at 375x812 with a realistic year of
 data, plus the two-point and flat-line chart cases.
+
+### 2026-09-13 — In-progress workouts survive a reload
+
+Ahead of a week of solo testing. Everything about an active workout lived in memory and in DOM
+inputs, so a reload lost the session outright: every weight, every rep, every checkmark, and the
+timer. On a phone in a gym that is not hypothetical — the OS evicts backgrounded tabs, and a long
+enough lock screen will do it. Same failure class as the rest of this project: silent loss of the
+data the app exists to collect.
+
+The workout is now snapshotted to `localStorage` on every keystroke, every checkmark and every
+swap, and restored on boot. Details worth keeping:
+
+- **Session-only swaps are captured in the snapshot.** They live only in memory, so without this
+  a reload would put restored sets back under the original movement.
+- **The original start time is preserved**, so the timer shows real elapsed time instead of
+  restarting. The tick now also runs once before the interval — hardcoding `00:00:00` first
+  flashed a zeroed timer for a second on resume, which looks exactly like the loss this prevents.
+- **`activeWorkout` is in `SESSION_KEYS`.** Without that, the next person to log in on a shared
+  phone resumes someone else's sets.
+- **Six hours is the auto-resume limit.** Older than that and it asks before picking up, because
+  a workout from two days ago is abandoned, not in progress. It is never discarded without asking.
+- A day already completed elsewhere, or a snapshot pointing at a day the plan no longer has,
+  clears rather than restoring.
+
+Verified by an actual browser reload: values, checkmarks, the session swap and the timer all
+came back. `test/resume.test.js` adds 29 assertions, written because this loss was **silent** —
+nothing errored, the sets simply were not there — and because a later refactor could reintroduce
+it the same way changing `syncData()` quietly broke the `T1-1` rescue rule.
+
+Also removed the Journal's reference to a "coach". `T3-13b` is not built, and promising that
+something reads your notes when nothing does is a claim the app cannot keep.
+
+Suite is now **342 assertions across ten files**.

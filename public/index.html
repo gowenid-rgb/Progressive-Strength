@@ -133,7 +133,7 @@
                     <div class="flex items-center space-x-3 mb-1">
                         <p id="plan-week" class="text-textMuted text-xs font-semibold uppercase tracking-widest">Week 1</p>
                         <button onclick="if(confirm('Start a completely new program? This will wipe your current active plan.')){localStorage.removeItem('currentWorkoutPlan'); currentWorkoutPlan=null; syncData(); nav('screen-onboarding');}" class="text-[9px] text-textMuted hover:text-white transition-colors bg-surface border border-borderSubtle px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Reset</button>
-                        <button onclick="localStorage.removeItem('token'); nav('screen-auth');" class="text-[9px] text-textMuted hover:text-white transition-colors bg-surface border border-borderSubtle px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Logout</button>
+                        <button onclick="logout()" class="text-[9px] text-textMuted hover:text-white transition-colors bg-surface border border-borderSubtle px-2 py-0.5 rounded-full uppercase tracking-widest font-bold">Logout</button>
                     </div>
                     <h1 id="plan-title" class="text-2xl font-semibold tracking-tight text-white">Your Plan</h1>
                 </div>
@@ -296,31 +296,71 @@
         let workoutStartTime = null;
         let workoutTimerInterval = null;
 
+        // Every key this app owns in localStorage. Listed once so nothing is missed when
+        // clearing a session - a key left behind leaks into the next account on this browser.
+        const SESSION_KEYS = ['token', 'currentWorkoutPlan', 'workoutJournal', 'journalEntries'];
+
+        function clearLocalSession() {
+            SESSION_KEYS.forEach(k => localStorage.removeItem(k));
+            currentWorkoutPlan = null;
+        }
+
+        // Rebuilds local state from a server response. Keys the server has no value for are
+        // explicitly cleared, so data from a previous session can never survive into this one.
+        // Never pushes: the server is the source of truth whenever we are reading from it.
+        function hydrateFromServer(data) {
+            if (data.currentPlan) {
+                currentWorkoutPlan = typeof data.currentPlan === 'string'
+                    ? JSON.parse(data.currentPlan)
+                    : data.currentPlan;
+                localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan));
+            } else {
+                currentWorkoutPlan = null;
+                localStorage.removeItem('currentWorkoutPlan');
+            }
+            localStorage.setItem('workoutJournal', JSON.stringify(data.workoutJournal || []));
+        }
+
+        function logout() {
+            clearLocalSession();
+            nav('screen-auth');
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
             const token = localStorage.getItem('token');
             if (!token) {
+                // No session, but stale data may still be sitting here from a previous user.
+                clearLocalSession();
                 nav('screen-auth');
                 return;
             }
             try {
                 const res = await fetch('/api/user/data', { headers: { 'Authorization': 'Bearer ' + token } });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.currentPlan) {
-                        currentWorkoutPlan = typeof data.currentPlan === 'string' ? JSON.parse(data.currentPlan) : data.currentPlan;
-                        localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
-                        renderPlan(currentWorkoutPlan);
-                        nav('screen-plan', 'nav-plan');
-                    } else {
-                        nav('screen-onboarding');
-                    }
-                    if (data.workoutJournal) {
-                        localStorage.setItem('workoutJournal', JSON.stringify(data.workoutJournal));
-                    }
-                } else {
+                if (!res.ok) {
+                    clearLocalSession();
                     nav('screen-auth');
+                    return;
                 }
-            } catch(e) { nav('screen-auth'); }
+                const data = await res.json();
+
+                // Hydrate fully before rendering, so render never reads half-updated state.
+                // Note there is deliberately no syncData() here: this plan was just fetched
+                // FROM the server, and pushing it back used to overwrite the server's journal
+                // with whatever stale value this browser happened to hold - on a new device,
+                // an empty array. That silently destroyed the user's entire lift history.
+                hydrateFromServer(data);
+
+                if (currentWorkoutPlan) {
+                    renderPlan(currentWorkoutPlan);
+                    nav('screen-plan', 'nav-plan');
+                } else {
+                    nav('screen-onboarding');
+                }
+            } catch(e) {
+                // A network failure is not proof the session is invalid, so keep the token
+                // and let the user retry rather than silently wiping their local data.
+                nav('screen-auth');
+            }
         });
 
         async function handleAuth(type) {
@@ -330,18 +370,22 @@
             try {
                 const res = await fetch('/api/auth/' + type, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password })
                 });
                 const data = await res.json();
                 if(!res.ok) throw new Error(data.error || 'Failed');
                 
+                // Drop everything belonging to whoever used this browser last, before the new
+                // session can adopt it. Without this, user B could push user A's history.
+                clearLocalSession();
                 localStorage.setItem('token', data.token);
+
                 const userRes = await fetch('/api/user/data', { headers: { 'Authorization': 'Bearer ' + data.token } });
-                const userData = await userRes.json();
-                if (userData.currentPlan) {
-                    currentWorkoutPlan = typeof userData.currentPlan === 'string' ? JSON.parse(userData.currentPlan) : userData.currentPlan;
-                    localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
+                if (!userRes.ok) throw new Error('Signed in, but could not load your data. Please reload.');
+                hydrateFromServer(await userRes.json());
+
+                if (currentWorkoutPlan) {
                     renderPlan(currentWorkoutPlan);
                     nav('screen-plan', 'nav-plan');
                 } else {
@@ -570,7 +614,7 @@
 
                     for (let s = 1; s <= numSets; s++) {
                         setsHtml += `
-                        <div class="grid grid-cols-12 gap-2 mb-3 items-center text-center bg-surfaceElevated p-2 rounded-xl border border-borderSubtle set-row">
+                        <div data-done="false" class="grid grid-cols-12 gap-2 mb-3 items-center text-center bg-surfaceElevated p-2 rounded-xl border border-borderSubtle set-row">
                             <div class="col-span-1 text-xs text-white font-medium">${s}</div>
                             <div class="col-span-3 text-xs text-textMuted text-left pl-1">${prevPerf}</div>
                             <div class="col-span-3"><input type="text" inputmode="numeric" data-ex="${exIndex}" data-set="${s}" class="workout-weight w-full bg-surface border border-borderSubtle rounded-lg p-2 text-center text-sm text-white focus:outline-none focus:border-white transition-colors" placeholder="${defaultWeight}"></div>
@@ -618,17 +662,64 @@
         }
 
         function toggleSet(el) {
-            if (el.classList.contains('bg-white')) {
+            const row = el.closest('.set-row');
+
+            if (row.dataset.done === 'true') {
+                row.dataset.done = 'false';
                 el.classList.remove('text-black', 'bg-white');
                 el.classList.add('text-transparent');
                 el.style.color = 'transparent';
-                el.parentElement.parentElement.classList.remove('opacity-50');
+                row.classList.remove('opacity-50');
             } else {
+                row.dataset.done = 'true';
                 el.classList.remove('text-transparent');
                 el.classList.add('text-black', 'bg-white');
                 el.style.color = 'black';
-                el.parentElement.parentElement.classList.add('opacity-50');
+                row.classList.add('opacity-50');
             }
+
+            // Resolving a row clears any warning highlight left by a previous finish attempt.
+            row.classList.remove('ring-2', 'ring-amber-400');
+        }
+
+        // Sorts every set row in the active workout into what gets logged and what is ambiguous.
+        //
+        // A set counts as performed ONLY when its box is checked. Values are never inferred from
+        // typed text, and placeholders are never read: the placeholder holds the AI's SUGGESTED
+        // weight, so the old fallback logged skipped sets at the target load. That history is
+        // what the AI reads to prescribe the next cycle, so a fabricated set makes it push
+        // weights the user never actually hit.
+        function collectWorkoutRows() {
+            const checked = [];
+            const typedButUnchecked = [];
+
+            document.querySelectorAll('#active-workout-exercises .set-row').forEach(row => {
+                const weightInput = row.querySelector('.workout-weight');
+                const repsInput = row.querySelector('.workout-reps');
+                if (!weightInput || !repsInput) return;
+
+                const weight = weightInput.value.trim();
+                const reps = repsInput.value.trim();
+
+                if (row.dataset.done === 'true') {
+                    checked.push({
+                        exIndex: parseInt(weightInput.getAttribute('data-ex'), 10),
+                        set: weightInput.getAttribute('data-set'),
+                        // Blank weight on a checked set means bodyweight, not the suggested load.
+                        weight: weight || 'BW',
+                        reps: reps
+                    });
+                } else if (weight !== '' || reps !== '') {
+                    typedButUnchecked.push(row);
+                }
+            });
+
+            return { checked, typedButUnchecked };
+        }
+
+        function highlightUnchecked(rows) {
+            rows.forEach(r => r.classList.add('ring-2', 'ring-amber-400'));
+            if (rows.length) rows[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
         function cancelWorkout() {
@@ -638,29 +729,57 @@
         }
 
         async function finishWorkout() {
-            if (workoutTimerInterval) clearInterval(workoutTimerInterval);
-            
-            const day = currentWorkoutPlan.days[activeDayIndex];
-            const completedExercises = [];
+            const { checked, typedButUnchecked } = collectWorkoutRows();
+            const n = typedButUnchecked.length;
+            const plural = n === 1 ? 'set has' : 'sets have';
 
-            // Scrape inputs
-            document.querySelectorAll('.workout-weight').forEach(input => {
-                const exIdx = input.getAttribute('data-ex');
-                const setNum = input.getAttribute('data-set');
-                const repsInput = document.querySelector(`.workout-reps[data-ex="${exIdx}"][data-set="${setNum}"]`);
-                
-                const weight = input.value.trim() || input.placeholder;
-                const reps = repsInput.value.trim() || repsInput.placeholder;
+            // In both prompts OK is the safe path (go back and look), so an absent-minded
+            // Enter keypress reviews rather than discards.
 
-                if (!completedExercises[exIdx]) {
-                    completedExercises[exIdx] = { name: day.exercises[exIdx].name, sets: [] };
+            // Nothing confirmed: don't write an empty log or spend a day out of the cycle.
+            if (checked.length === 0) {
+                const detail = n > 0
+                    ? '\n\n' + n + ' ' + plural + ' numbers entered but no checkmark. Unchecked sets are never saved.'
+                    : '';
+                const review = confirm(
+                    'No sets are checked off, so nothing will be saved and this day will not count as complete.'
+                    + detail
+                    + '\n\nOK to go back and check them off, or Cancel to discard this workout.'
+                );
+                if (review) {
+                    highlightUnchecked(typedButUnchecked);
+                    return;
                 }
-                
-                completedExercises[exIdx].sets.push({
-                    set: setNum,
-                    weight: weight,
-                    reps: reps
-                });
+                if (workoutTimerInterval) clearInterval(workoutTimerInterval);
+                nav('screen-plan', 'nav-plan');
+                return;
+            }
+
+            // Some confirmed, some ambiguous: let the user resolve it rather than guessing.
+            if (n > 0) {
+                const review = confirm(
+                    n + ' ' + plural + ' weight or reps entered but no checkmark, and unchecked sets are not saved.'
+                    + '\n\nOK to go back and check them off, or Cancel to finish with only the '
+                    + checked.length + ' checked ' + (checked.length === 1 ? 'set' : 'sets') + '.'
+                );
+                if (review) {
+                    highlightUnchecked(typedButUnchecked);
+                    return;
+                }
+            }
+
+            if (workoutTimerInterval) clearInterval(workoutTimerInterval);
+
+            const day = currentWorkoutPlan.days[activeDayIndex];
+
+            // Group by exercise, dropping exercises with no confirmed sets. Built as an object
+            // rather than the previous sparse array, which serialized its gaps as nulls.
+            const byExercise = {};
+            checked.forEach(row => {
+                if (!byExercise[row.exIndex]) {
+                    byExercise[row.exIndex] = { name: day.exercises[row.exIndex].name, sets: [] };
+                }
+                byExercise[row.exIndex].sets.push({ set: row.set, weight: row.weight, reps: row.reps });
             });
 
             const workoutLog = {
@@ -668,18 +787,18 @@
                 planName: currentWorkoutPlan.planName,
                 dayName: day.dayName,
                 durationSeconds: Math.floor((Date.now() - workoutStartTime) / 1000),
-                exercises: completedExercises
+                exercises: Object.values(byExercise)
             };
 
-            let journal = JSON.parse(localStorage.getItem('workoutJournal') || '[]');
+            const journal = JSON.parse(localStorage.getItem('workoutJournal') || '[]');
             journal.push(workoutLog);
             localStorage.setItem('workoutJournal', JSON.stringify(journal));
 
             day.completed = true;
-            localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
+            localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan));
+            await syncData();
 
-            console.log("WORKOUT SAVED:", workoutLog);
-            await syncData(); alert("Workout finished and saved to journal!");
+            alert('Workout saved - ' + checked.length + ' ' + (checked.length === 1 ? 'set' : 'sets') + ' logged.');
             renderPlan(currentWorkoutPlan);
             nav('screen-plan', 'nav-plan');
         }

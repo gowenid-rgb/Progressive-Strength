@@ -7,6 +7,7 @@ const {
     generateJSON, validatePlan, validateRecap, PLAN_SCHEMA, RECAP_SCHEMA
 } = require('./aiClient');
 const db = require('./db');
+const repo = require('./repo');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
 const { aiLimiters, authLimiter } = require('./rateLimits');
@@ -27,49 +28,109 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Authentication Routes
 app.use('/api/auth', authLimiter, authRoutes);
 
-// User Data Sync Endpoints
+// ---------------------------------------------------------------- user data
+//
+// GET returns the active cycle's current week plan plus recent history, in the shape the
+// client already renders. POST saves only the PLAN. Workouts and journal entries have their
+// own append-only endpoints below — the old design sent the entire history blob on every
+// save, which is what let a stale client wipe it (T1-1, T3-3).
+
 app.get('/api/user/data', authenticateToken, async (req, res) => {
     try {
-        const result = await db.query('SELECT current_plan, workout_journal FROM user_data WHERE user_id = $1', [req.user.id]);
-        if (result.rows.length === 0) return res.json({ currentPlan: null, workoutJournal: [] });
+        const cycle = await repo.getActiveCycle(req.user.id);
+        const weekPlan = cycle ? await repo.getWeekPlan(cycle.id, cycle.current_week) : null;
+
         res.json({
-            currentPlan: result.rows[0].current_plan,
-            workoutJournal: result.rows[0].workout_journal || []
+            currentPlan: weekPlan ? weekPlan.plan : null,
+            workoutJournal: await repo.getWorkoutHistory(req.user.id),
+            journalEntries: await repo.getJournalEntries(req.user.id),
+            cycle: cycle ? {
+                id: cycle.id,
+                name: cycle.name,
+                totalWeeks: cycle.total_weeks,
+                currentWeek: cycle.current_week,
+                status: cycle.status
+            } : null
         });
     } catch (err) {
+        console.error('Fetch user data failed:', err);
         res.status(500).json({ error: 'Failed to fetch user data' });
     }
 });
 
+// Saves the current week's plan. Creates a cycle on first save so a user who generated a
+// plan before cycles existed as a concept still gets one.
 app.post('/api/user/data', authenticateToken, async (req, res) => {
     try {
-        const { currentPlan, workoutJournal } = req.body;
+        const { currentPlan, cycleOptions } = req.body;
 
-        // Upsert rather than UPDATE: an UPDATE against a missing row affects zero rows
-        // and reports success, silently discarding the user's data forever.
-        const result = await db.query(
-            `INSERT INTO user_data (user_id, current_plan, workout_journal)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (user_id) DO UPDATE
-                SET current_plan     = EXCLUDED.current_plan,
-                    workout_journal  = EXCLUDED.workout_journal`,
-            [
-                req.user.id,
-                currentPlan ? JSON.stringify(currentPlan) : null,
-                JSON.stringify(workoutJournal || [])
-            ]
-        );
-
-        // A save that wrote nothing must never report success.
-        if (result.rowCount !== 1) {
-            console.error(`Save for user ${req.user.id} affected ${result.rowCount} rows, expected 1`);
-            return res.status(500).json({ error: 'Save did not persist' });
+        if (!currentPlan) {
+            // No plan means the user reset. Retire the cycle; history is deliberately kept.
+            await repo.endActiveCycle(req.user.id, 'abandoned');
+            return res.json({ success: true, cycle: null });
         }
 
-        res.json({ success: true });
+        let cycle = await repo.getActiveCycle(req.user.id);
+        if (!cycle) {
+            cycle = await repo.startCycle(req.user.id, Object.assign(
+                { name: currentPlan.planName, totalWeeks: 1 },
+                cycleOptions || {}
+            ));
+        }
+
+        await repo.saveWeekPlan(cycle.id, cycle.current_week, currentPlan, { status: 'active' });
+
+        res.json({
+            success: true,
+            cycle: { id: cycle.id, totalWeeks: cycle.total_weeks, currentWeek: cycle.current_week }
+        });
     } catch (err) {
-        console.error(err);
+        console.error('Save user data failed:', err);
         res.status(500).json({ error: 'Failed to save user data' });
+    }
+});
+
+// Append-only. Finishing a workout inserts rows; nothing rewrites history. This is the
+// structural fix for T3-3 — there is no longer a code path that can overwrite past sessions.
+app.post('/api/workouts', authenticateToken, async (req, res) => {
+    try {
+        const workout = req.body || {};
+        if (!Array.isArray(workout.exercises) || workout.exercises.length === 0) {
+            return res.status(400).json({ error: 'A workout must contain at least one exercise' });
+        }
+
+        const cycle = await repo.getActiveCycle(req.user.id);
+        const saved = await repo.appendWorkout(req.user.id, Object.assign({}, workout, {
+            cycleId: cycle ? cycle.id : null,
+            weekNumber: workout.weekNumber || (cycle ? cycle.current_week : null)
+        }));
+
+        res.status(201).json({ success: true, workoutId: saved.id });
+    } catch (err) {
+        console.error('Append workout failed:', err);
+        res.status(500).json({ error: 'Failed to save workout' });
+    }
+});
+
+// Check-in reflections, finally stored server-side (T3-2).
+app.post('/api/journal', authenticateToken, async (req, res) => {
+    try {
+        const { energy, intentions } = req.body || {};
+        if (!String(energy || '').trim() && !String(intentions || '').trim()) {
+            return res.status(400).json({ error: 'Entry is empty' });
+        }
+
+        const cycle = await repo.getActiveCycle(req.user.id);
+        const saved = await repo.appendJournalEntry(req.user.id, {
+            cycleId: cycle ? cycle.id : null,
+            weekNumber: cycle ? cycle.current_week : null,
+            energy, intentions
+        });
+
+        res.status(201).json({ success: true, entryId: saved.id });
+    } catch (err) {
+        console.error('Append journal entry failed:', err);
+        res.status(500).json({ error: 'Failed to save journal entry' });
     }
 });
 

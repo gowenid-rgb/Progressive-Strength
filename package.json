@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/tier1.test.js && node test/db.test.js && node test/ratelimit.test.js && node test/aiclient.test.js"
+    "test": "node test/tier1.test.js && node test/db.test.js && node test/ratelimit.test.js && node test/aiclient.test.js && node test/schema.test.js && node test/integration.test.js",
+    "migrate": "node -e \"require(\"./config\"); const db=require(\"./db\"); require(\"./migrate\").migrate(db).then(()=>process.exit(0)).catch(e=>{console.error(e);process.exit(1)})\""
   },
   "dependencies": {
     "@google/genai": "^2.21.0",

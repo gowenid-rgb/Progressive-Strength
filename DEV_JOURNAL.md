@@ -182,7 +182,7 @@ plans, or the same plan progressively loaded? Decide before building. Depends on
 
 ---
 
-### T3-2 — `journalEntries` never syncs to the server · `OPEN`
+### T3-2 — `journalEntries` never syncs to the server · `FIXED by T3-14`
 
 **Where:** `index.html` `syncData()` (~L355) sends only `currentPlan` and `workoutJournal`
 
@@ -194,7 +194,7 @@ payload and the GET response. Needs the `ALTER TABLE` path noted in **Constraint
 
 ---
 
-### T3-3 — Last-write-wins blob sync · `ABSORBED by T3-14`
+### T3-3 — Last-write-wins blob sync · `FIXED by T3-14` (history is now append-only)
 
 **Symptom:** Two open tabs, or a phone plus a laptop, and the loser's data silently vanishes.
 No version check, no merge, no conflict surface.
@@ -516,7 +516,7 @@ Two reorderings fall out of that, and both are the opposite of the complexity ra
 | # | Item | Why here | Gate |
 |---|------|----------|------|
 | 1 | `T3-8` visual bug | Trivial, and `T3-11` rebuilds this timeline — fix the markup before building on it | none |
-| 2 | **`T3-14` schema redesign** | The keystone. Free exactly once | `D10` ✅ |
+| 2 | **`T3-14` schema redesign** | ✅ **SHIPPED** 2026-09-12 | `D10` ✅ |
 | 3 | `T3-11` variable cycles | Defines the cycle entity; gets the user training again on a 6-week cycle | `T3-14` |
 | 4 | `T3-9` exercise swap | Small once sets are normalised; wanted during the 6-week cycle | `T3-14` |
 | 5 | `T3-10` metrics + aggregates | Needs normalised sets **and** real history to display | `T3-14`, `T3-11` |
@@ -527,7 +527,7 @@ Steps 3 and 4 are what get the app usable again after the purge. Steps 5-7 are w
 
 ---
 
-## T3-14 — Phase 2 schema redesign · `OPEN` (absorbs `T3-3`)
+## T3-14 — Phase 2 schema redesign · `SHIPPED` 2026-09-12 (absorbs `T3-3`)
 
 Replaces the two-JSONB-blob model. **Destructive: existing user data is purged**, agreed
 2026-09-12 on the basis that the only user is the developer, who intends to rebuild as a 6-week
@@ -1060,3 +1060,52 @@ contains the W-nodes below the sticky header, and the header moves to `z-20` so 
 is explicit. The containment deliberately lives on the wrapper: `renderPlan()` rewrites each
 node's `className` — including `z-10` — on every render, so a fix applied to the nodes would
 survive exactly until the first plan loaded.
+
+### 2026-09-12 — T3-14 shipped: Phase 2 schema, migration runner, append-only history
+
+The keystone is in. `user_data` is gone, replaced by `cycles` -> `week_plans` -> `workouts` ->
+`workout_sets`, plus `journal_entries`. **186 assertions across six suites**, including a new
+end-to-end suite that drives the real Express app over HTTP against real PostgreSQL.
+
+**Two bugs closed as a side effect, structurally rather than by guarding against them:**
+
+- `T3-3` (last-write-wins) — there is no longer a request that can overwrite history. Finishing
+  a workout POSTs one session to `/api/workouts` and inserts rows. `syncData()` sends the plan
+  and nothing else.
+- `T3-2` (`journalEntries` never synced) — check-ins now persist to `journal_entries` and
+  hydrate like everything else.
+
+**The tests caught a regression I introduced.** Changing `syncData()` to send only the plan
+silently broke the boot-time rescue rule, which called it to restore history stranded on a
+device — so the rescue would have restored nothing. That is the exact failure the rescue exists
+to prevent, reintroduced by the refactor that was supposed to make it unnecessary. Now fixed:
+the rescue appends each workout individually. **Worth remembering that the regression was
+invisible in every other test; only the assertion written specifically for the rescue caught
+it.**
+
+**Found while writing the integration test: a real race.** `server.js` starts `initDB()` without
+awaiting, so two instances booting together both read an empty `schema_migrations`, both apply
+001, and the loser dies on a duplicate key — taking the instance down. One replica on Railway
+today, so it would not have fired yet; it would have fired the first time the service scaled.
+`migrate()` now takes a session-scoped `pg_advisory_lock`, so concurrent runners serialise.
+
+**Also caught:** migration 001 referenced `users(id)` without creating it. Correct against the
+deployed database, which already has the table, and broken on every fresh one — including the
+test suite and any local dev database. 001 now creates it `IF NOT EXISTS`, so it is right in
+both cases.
+
+**A test-harness fidelity note worth keeping.** node-postgres sends a param-less query over the
+SIMPLE protocol, which allows several statements in one string — that is how a whole `.sql` file
+applies in one call. PGlite's `query()` always uses the EXTENDED protocol and rejects
+multi-statement text. The shim routes param-less calls to `exec()` so the harness matches
+production. Without that the suite would fail on SQL that works in production, or worse, pass on
+SQL that does not.
+
+**`test/db.test.js` was rewritten rather than deleted.** Its `user_data` upsert assertions
+(`T1-4`) are obsolete — the table no longer exists — but registration atomicity still matters,
+because a half-created account was what made the original silent-save bug reachable. The file
+documents what retired and why.
+
+**Not yet done, and the reason `T3-11` is next:** the schema supports N-week cycles, but the UI
+and prompts still only ever produce week 1. `total_weeks` is honoured when a client sends
+`cycleOptions`, and nothing sends it yet.

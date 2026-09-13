@@ -539,3 +539,24 @@ every route under test must reject before reaching either.
 
 **`T1-5` (rotate `GEMINI_API_KEY`) is still open.** Rate limiting caps the damage but does not
 revoke the exposed key. Requires Google AI Studio access.
+
+### 2026-09-12 — Tier 2 deployed and verified live
+
+Merge `be84e5e` deployed. Verified against production, read-only:
+
+| Check | Result |
+|---|---|
+| homepage | 200 |
+| `/api/models` anonymous | **401** (was an open proxy to the model list) |
+| `/api/nonsense` | **404 JSON** — `{"error":"Unknown API endpoint: GET /api/nonsense"}` |
+| `/deep/spa/link` | 200, SPA still served |
+| `/api/user/data` no token | 401 |
+
+The `/api/nonsense` result is the visible proof of `T2-5`: that path previously returned
+`index.html` with a 200.
+
+Rate limits are live but deliberately not exercised against production — tripping them would
+lock a real account out of plan generation for 15 minutes. They are covered by
+`test/ratelimit.test.js` against a real in-process server instead.
+
+**Rollback target for this deploy: `bf46038`** (Tier 1).

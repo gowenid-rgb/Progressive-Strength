@@ -296,21 +296,23 @@ This is a recommendation, not a decision. See `D10`.
 ## Dependency graph
 
 ```
-T3-8   visual bug          independent, trivial
-T3-9   exercise swap       independent (touches T1-2 logging invariants)
-
-T3-3   schema foundation   <-- the free-migration window
+T3-8   visual bug            DONE
+T3-14  schema foundation     DONE   <-- the free-migration window, spent
+T3-11  variable cycles       DONE
          |
-         +-- T3-10  metrics + data layer ---+
-         |                                  +-- T3-12  long-term AI review
-         +-- T3-11  variable cycles --------+
-                                            \
-                                             +- T3-13  two-agent check-in
+T3-9   exercise swap --------+   (writes sets, so it needed the schema first)
+
+T3-10  metrics + aggregates -----+-- T3-12  long-term AI review
+
+T3-13a journal capture log ------+-- T3-13b  read-only coach
 ```
 
-`T3-12` and `T3-13` are gated: an AI reviewing a year of training needs `T3-10`'s aggregates
-(raw logs will not fit a context window affordably), and an agent adjusting a cycle needs
-`T3-11`'s cycle model to adjust.
+`T3-12` is gated on `T3-10`: an AI reviewing a year of training needs aggregates, because raw
+logs will not fit a context window affordably.
+
+`T3-13b` is **not** gated on `T3-10` — it needs history and notes, both of which already exist.
+Aggregates make the coach better, not possible. Updated 2026-09-12 when the two-agent split was
+dropped in favour of the separation the layout already provides.
 
 ---
 

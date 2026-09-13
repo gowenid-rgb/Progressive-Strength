@@ -162,7 +162,7 @@ real problem and making future debugging much harder than it should be.
 
 ## Open Issues — Tier 3 (worth doing soon)
 
-### T3-1 — The cycle week never advances · `OPEN`
+### T3-1 — The cycle week never advances · `SUPERSEDED by T3-11`
 
 **Where:** `server.js` prompts (week is hardcoded to 1 in the schema block); `index.html` `renderPlan()`
 
@@ -194,7 +194,7 @@ payload and the GET response. Needs the `ALTER TABLE` path noted in **Constraint
 
 ---
 
-### T3-3 — Last-write-wins blob sync · `OPEN`
+### T3-3 — Last-write-wins blob sync · `OPEN` — **promoted to Phase 2 foundation**
 
 **Symptom:** Two open tabs, or a phone plus a laptop, and the loser's data silently vanishes.
 No version check, no merge, no conflict surface.
@@ -264,6 +264,247 @@ Small, independent, none urgent:
 
 ---
 
+---
+
+# Phase 2 — Roadmap
+
+Added 2026-09-12. Six items, **ranked by complexity, easiest first**, which is the order we
+intend to build them. Tier 1 and Tier 2 were about stopping the app from corrupting data. This
+is about making it the app it is supposed to be.
+
+Everything below is design, not commitment. Open questions are marked and should be settled
+before the relevant item starts.
+
+## The strategic point: there is a free-migration window, and it will close
+
+**The user is currently the only user, and has said data can be purged.** That makes a clean
+schema redesign approximately free right now. The moment a second person has history worth
+keeping, every schema change needs a migration path — and `initDB()` uses
+`CREATE TABLE IF NOT EXISTS`, so it cannot alter existing tables (see **Constraints**).
+
+Three of the six items below want schema changes (`T3-10`, `T3-11`, and `T3-13`). Doing them on
+today's two-JSONB-blob schema means building the metrics layer once on blobs and again after
+normalisation.
+
+**Recommendation:** take `T3-3` (normalise the journal) as a foundation step before `T3-10`,
+rather than last. It is not the easiest item, so it breaks the easiest-first rule — but it is the
+cheapest it will ever be, and it removes rework from two items downstream. The user also wants a
+6-week cycle, which needs the new schema anyway, so the trigger is already here.
+
+This is a recommendation, not a decision. See `D10`.
+
+## Dependency graph
+
+```
+T3-8   visual bug          independent, trivial
+T3-9   exercise swap       independent (touches T1-2 logging invariants)
+
+T3-3   schema foundation   <-- the free-migration window
+         |
+         +-- T3-10  metrics + data layer ---+
+         |                                  +-- T3-12  long-term AI review
+         +-- T3-11  variable cycles --------+
+                                            \
+                                             +- T3-13  two-agent check-in
+```
+
+`T3-12` and `T3-13` are gated: an AI reviewing a year of training needs `T3-10`'s aggregates
+(raw logs will not fit a context window affordably), and an agent adjusting a cycle needs
+`T3-11`'s cycle model to adjust.
+
+---
+
+## 1. T3-8 — Cycle timeline overlaps the header when scrolling · `OPEN`
+
+**Complexity: trivial.** One CSS change, plus one trap.
+
+**Where:** `public/index.html:131` (sticky header), `:146-153` (timeline), and `renderPlan()`
+
+**Cause:** The header is `sticky top-0 z-10`. The W1-W4 nodes are also `z-10`, and as flex
+items `z-index` applies to them. Equal z-index, and the nodes come later in the DOM, so they
+paint over the header.
+
+**The trap:** `renderPlan()` rebuilds `node.className` on every render and writes `z-10` back
+in. Fixing only the static HTML would look correct until the first plan loads, then regress.
+
+**Fix:** give the timeline wrapper (`:146`) `relative z-0`. That creates a stacking context
+containing the whole group, so the nodes still sit above their connector line but the group sits
+below the header — and it holds regardless of what `renderPlan()` writes to the children. Raising
+the header to `z-20` also works but leaves the same trap for the next person.
+
+**Depends on:** nothing. **Blocks:** nothing. Good first task.
+
+---
+
+## 2. T3-9 — Swap an exercise mid-workout · `OPEN`
+
+**Complexity: low-medium.** Self-contained UI, but it writes to the log, so it must respect the
+invariants `T1-2` established.
+
+**What:** a **Swap** button on each exercise in the active workout. Tapping it offers
+alternatives for that movement pattern, plus **Enter your own**. Pull-ups would offer lat
+pulldowns, bent-over rows, seated cable rows, or free text like "assisted pull-ups".
+
+**Systems touched:**
+- `startWorkout()` — render the button and the picker
+- `finishWorkout()` — the log must record **what was actually performed**, not what was
+  prescribed, and flag it as a substitution so the AI can see the swap happened
+- The `Prev` column lookup matches on exercise name, so a swapped-in movement should surface
+  *its own* history, not the replaced movement's
+- `T1-2` invariant: a swapped exercise's sets still only log when checked
+
+**Why the substitution flag matters:** without it, the AI sees a user who silently stopped doing
+pull-ups and started doing lat pulldowns, and has no idea it was an equipment constraint rather
+than a programming choice. With it, the next cycle can either honour the substitution or program
+back toward the original.
+
+**Open questions:**
+- `D6` — does a swap apply to **this session only**, or persist into the remaining weeks of the
+  cycle? Recommend session-only by default with an optional "use this for the rest of the cycle",
+  since the common case is a busy squat rack, not a permanent change.
+- `D7` — are alternatives a **static map** or **AI-generated**? Recommend static: it is instant,
+  works offline, costs nothing, and a mid-workout AI round trip is bad UX while resting between
+  sets. An AI fallback for unrecognised movements is a reasonable later addition.
+
+---
+
+## 3. T3-10 — Rewrite the Metrics tab as real data, not AI · `OPEN`
+
+**Complexity: medium.** The UI is straightforward. The data underneath is the actual work.
+
+**What:** replace the AI recap button with a static dashboard — workouts completed this
+week/month/year, a line graph of lifting progression, total weight moved, and similar. This
+doubles as **the aggregate layer the AI reads for long-term context** (`T3-12`).
+
+**The real problem: weight and reps are free-text strings.** The journal stores whatever the
+user typed — `"225"`, `"225 lbs"`, `"BW"`, `"100kg"`, `"bodyweight"`. Nothing can be summed,
+averaged or plotted until that is parsed into a number plus a unit. Two halves:
+
+- **Going forward:** normalise at write time. Store `{ value, unit, isBodyweight }` alongside the
+  raw string so the original is never lost.
+- **Backwards:** parse existing history, or accept that it is unusable.
+
+**The purge makes the second half disappear entirely** — a strong argument for doing this after
+`T3-3` rather than before.
+
+**Charting:** recommend hand-rolled SVG rather than a charting library. The CSP allows scripts
+only from a few CDNs, the app is a PWA that should work offline, and a line chart of one series is
+perhaps 40 lines of SVG. A library is a large dependency for one chart.
+
+**Progression is not one number.** "Lifting progression" needs a definition: heaviest set per
+movement over time? Estimated 1RM? Total volume per session? Recommend **per-movement best set**
+as the headline (it is what lifters actually track) with **session volume** as a secondary line.
+
+**Depends on:** `T3-3` strongly recommended first. **Blocks:** `T3-12`.
+
+---
+
+## 4. T3-11 — Variable-length cycles · `OPEN` (supersedes `T3-1`)
+
+**Complexity: medium-high.** Touches the schema, the prompts, the onboarding UI, the plan screen,
+and adds week-advancement logic that does not currently exist in any form.
+
+**What:** the cycle length becomes a user choice at creation — "how many weeks?" — with a
+**Not sure** option that asks the AI to recommend a length based on training goal, experience and
+intended stimulus. Replaces today's hardcoded, purely decorative 4-week timeline.
+
+**Systems touched:**
+- **Onboarding** — new question, plus the "not sure" path (a small, cheap AI call of its own)
+- **Schema** — `cycle_weeks`, `current_week`, and per-week plans. Today there is exactly one
+  `current_plan` blob and no notion of a cycle at all
+- **Prompts** — must become phase-aware for arbitrary N, not the hardcoded `"week": 1`. Phase
+  boundaries scale differently for 4 vs 6 vs 12 weeks, and a deload in week 6 of 6 is a different
+  instruction from a deload in week 4 of 4
+- **Plan screen** — the timeline must render N nodes, not four hardcoded divs. Interacts with
+  `T3-8`; do the bug fix first so this builds on correct markup
+- **Advancement** — when every day in a week is complete, advance and generate the next week.
+  Nothing like this exists today; `day.completed` is the only progress state
+
+**Resolves `D3` and `D4`,** which have been open since the first audit:
+- `D3` — is a cycle N distinct weekly plans, or one plan progressively loaded?
+- `D4` — do we keep plan history, or only ever the current plan?
+
+**Recommendation on `D3`:** distinct plans per week, generated one week ahead. Real periodisation
+changes exercise selection, not just load, and it means a mid-cycle adjustment (`T3-13`) can
+rewrite the upcoming week without touching completed ones. It costs one AI call per week rather
+than one per cycle, which is cheap and already rate-limited.
+
+**Recommendation on `D4`:** keep history. Once cycles are a real entity, "show me cycle 3" is
+obviously valuable, and it is far cheaper to store from the start than to reconstruct later.
+
+---
+
+## 5. T3-12 — AI review of near- and long-term progress · `OPEN`
+
+**Complexity: high, but mostly gated rather than intrinsically hard.** Once `T3-10` exists, this
+is largely a prompt and an endpoint.
+
+**What:** the AI can speak to progress over a week, a cycle, or a year — "you have added 40 lb to
+your squat since March, and your consistency dropped in June."
+
+**The architectural constraint:** a year of raw workout logs will not fit a context window at
+sensible cost. **This endpoint must consume `T3-10`'s aggregates, not raw history.** That is the
+whole reason `T3-10` is described as a data layer rather than a screen — the dashboard and the AI
+read the same computed summary.
+
+**Design note:** aggregates should be computed server-side and cached, not recomputed per request.
+A year of training is not much data, but recomputing it on every AI call is waste that grows.
+
+**Depends on:** `T3-10`. **Do not start before it.**
+
+---
+
+## 6. T3-13 — Split Check-in into two agents · `OPEN`
+
+**Complexity: highest.** New interaction model, new persistence, two privilege levels, and it is
+the first place an AI gets write access to the user's plan.
+
+**What:** the Check-in screen becomes two distinct things:
+
+1. **Ask** — a read-only chat that knows your program and history. Questions about this week, next
+   week, a specific movement, technique, or why the programme looks the way it does. **No ability
+   to change anything.**
+2. **Request adjustments** — a separate input that *can* modify the cycle. "My back feels better,
+   add front squats back in." "I am getting sick, taking this week off, start a new cycle next
+   week."
+
+**Why this split is right:** it makes capability legible. The user always knows whether they are
+talking to something that can change their programme. Today's single feedback box silently
+recalibrates the whole plan on every submission, which is why a stray comment can rewrite a week.
+
+**Systems touched:**
+- **New UI** — message list, turn-taking, pending/failed states. Nothing in the app does this today
+- **New persistence** — conversation history, which is new data and probably a new table
+- **Two prompt contexts** with genuinely different tool access
+- **Rate limiting (`T2-3`)** — chat is many more calls than one-shot generation. Current caps
+  (10/15min) would be hit in a single real conversation. Needs its own budget
+- **Cost** — the first feature where usage scales with conversation length rather than actions
+
+**The important design rule — and it is the lesson of this entire session.** The adjustment agent
+writes to the user's plan. Every silent-data-corruption bug we just spent Tier 1 fixing came from
+something changing the user's data without the user seeing it happen.
+
+> **The adjustment agent must preview its changes and require confirmation before applying them.**
+> Show a diff: these exercises removed, these added, this week rescheduled. Never apply silently.
+
+It also needs the same validation rigour as `T2-1` — a model-authored plan that fails
+`validatePlan()` must never overwrite a good one.
+
+**Depends on:** `T3-10` (history context) and `T3-11` (a cycle model to adjust).
+
+---
+
+## Phase 2 open questions
+
+| # | Question | Blocks | Recommendation |
+|---|----------|--------|----------------|
+| D6 | Does an exercise swap persist beyond the session? | `T3-9` | Session-only, with an opt-in "rest of cycle" |
+| D7 | Swap alternatives: static map or AI? | `T3-9` | Static — instant, offline, free |
+| D8 | Chart: hand-rolled SVG or a library? | `T3-10` | Hand-rolled SVG — CSP-friendly, works offline |
+| D9 | Does the adjustment agent apply changes directly? | `T3-13` | **No** — preview and confirm, always |
+| D10 | Take the schema foundation (`T3-3`) early, while purging is free? | `T3-10`, `T3-11` | **Yes** — it will never be cheaper |
+
+
 ## Decisions & open questions
 
 Cross-cutting things to settle before they force rework.
@@ -275,6 +516,7 @@ Cross-cutting things to settle before they force rework.
 | D3 | Is a "cycle" 4 distinct weekly plans, or one plan progressively loaded? | Blocks `T3-1`, shapes schema in `T3-3` | **Unanswered** |
 | D4 | Keep plan history, or only ever the current plan? | Schema decision; cheaper to make now than later | **Unanswered** |
 | D5 | Does the clone live inside OneDrive or outside it? | Blocks `T1-0` | ✅ **Decided 2026-09-12** — outside |
+| D6-D10 | Phase 2 design questions | See **Phase 2 open questions** above | **Unanswered** |
 
 ### D2 — resolved
 
@@ -597,3 +839,30 @@ files**.
 
 **Riskiest deploy so far** — it is the first change to the actual generation path. Generating a
 plan in the live app is the real test.
+
+### 2026-09-12 — Phase 2 scoped: six items ranked by complexity
+
+Scope shifts from repairing silent data corruption to building the app's actual product. Six
+items logged as `T3-8` through `T3-13`, ranked easiest first, with a dependency graph. `T3-1` is
+superseded by `T3-11`; `T3-3` is promoted from a Tier 3 nice-to-have to a Phase 2 foundation.
+
+**The one thing worth arguing about is sequencing.** The user is the only user and has agreed
+data can be purged, which makes a clean schema redesign free *right now* and never again.
+`T3-10` and `T3-11` both want schema changes, and building the metrics layer on today's JSONB
+blobs means building it twice. Recommended `T3-3` as a foundation step ahead of `T3-10` even
+though it breaks the easiest-first ordering. Logged as `D10`.
+
+**Two findings while scoping:**
+
+`T3-8` has a trap. `renderPlan()` rewrites `node.className` including `z-10` on every render, so
+fixing the static HTML alone would look right until the first plan loads. The fix belongs on the
+timeline *wrapper* as a stacking context, not on the nodes.
+
+`T3-10` is not really a UI task. Weight and reps are stored as free text (`"225"`, `"BW"`,
+`"100kg"`), so nothing can be summed or plotted until there is a parse-and-normalise layer. That
+layer, not the dashboard, is the work — and it is what `T3-12` will read, since a year of raw
+logs will not fit a context window affordably.
+
+**One principle carried forward into `T3-13`:** the adjustment agent gets write access to the
+user's plan, which is precisely the shape of every bug Tier 1 just fixed. It must preview changes
+and require confirmation. Never silent. Recorded as `D9`.

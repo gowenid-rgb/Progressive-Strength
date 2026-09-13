@@ -8,6 +8,7 @@ const {
 } = require('./aiClient');
 const db = require('./db');
 const repo = require('./repo');
+const cycles = require('./cycles');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
 const { aiLimiters, authLimiter } = require('./rateLimits');
@@ -49,7 +50,10 @@ app.get('/api/user/data', authenticateToken, async (req, res) => {
                 name: cycle.name,
                 totalWeeks: cycle.total_weeks,
                 currentWeek: cycle.current_week,
-                status: cycle.status
+                status: cycle.status,
+                // Computed server-side and shipped whole, so the timeline cannot drift from
+                // the phase the prompt was actually given.
+                phases: cycles.phasesForCycle(cycle.total_weeks)
             } : null
         });
     } catch (err) {
@@ -134,6 +138,75 @@ app.post('/api/journal', authenticateToken, async (req, res) => {
     }
 });
 
+// Recommends a cycle length for users who pick "Not sure". A small, cheap call: the
+// alternative is making someone guess at periodisation before they have trained once.
+app.post('/api/recommend-cycle-length', authenticateToken, aiLimiters, async (req, res) => {
+    try {
+        if (!process.env.GEMINI_API_KEY) {
+            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        }
+
+        const { primaryGoal, experienceLevel, trainingDays, extraDetails } = req.body;
+
+        const prompt = `You are an expert strength and conditioning coach.
+
+Recommend a training cycle length in weeks for this lifter:
+- Goal: ${primaryGoal || 'General fitness'}
+- Experience: ${experienceLevel || 'Beginner'}
+- Training days per week: ${trainingDays || 4}
+- Notes: ${extraDetails || 'None'}
+
+Guidance:
+- Beginners adapt quickly and benefit from shorter cycles they can complete and repeat.
+- Hypertrophy blocks generally need longer accumulation than pure strength peaking blocks.
+- Anything from ${cycles.MIN_WEEKS} to ${cycles.MAX_WEEKS} weeks is valid. Most lifters do well between 4 and 8.
+- The final week of cycles of 4 weeks or longer is a deload, so account for that.
+
+Return the number of weeks and one short sentence explaining why, addressed to the lifter.`;
+
+        const result = await generateJSON({
+            prompt,
+            schema: cycles.RECOMMENDATION_SCHEMA,
+            validate: cycles.validateRecommendation,
+            label: 'recommend-cycle-length'
+        });
+
+        const weeks = cycles.clampWeeks(result.weeks);
+        res.json({ weeks, rationale: result.rationale, phases: cycles.phasesForCycle(weeks) });
+    } catch (error) {
+        console.error('Error recommending cycle length:', error);
+        res.status(500).json({ error: error.message || 'Failed to recommend a cycle length' });
+    }
+});
+
+// Advances the active cycle to its next week. Called when every day in the current week is
+// complete; the client then generates the next week's plan.
+app.post('/api/cycle/advance', authenticateToken, async (req, res) => {
+    try {
+        const cycle = await repo.getActiveCycle(req.user.id);
+        if (!cycle) return res.status(400).json({ error: 'No active cycle' });
+
+        if (cycle.current_week >= cycle.total_weeks) {
+            await repo.endActiveCycle(req.user.id, 'completed');
+            return res.json({ completed: true, cycle: null });
+        }
+
+        const updated = await repo.advanceCycleWeek(cycle.id);
+        res.json({
+            completed: false,
+            cycle: {
+                id: updated.id,
+                totalWeeks: updated.total_weeks,
+                currentWeek: updated.current_week,
+                phases: cycles.phasesForCycle(updated.total_weeks)
+            }
+        });
+    } catch (error) {
+        console.error('Error advancing cycle:', error);
+        res.status(500).json({ error: 'Failed to advance cycle' });
+    }
+});
+
 // Endpoint to generate a workout plan
 app.post('/api/generate-plan', authenticateToken, aiLimiters, async (req, res) => {
     try {
@@ -143,7 +216,18 @@ app.post('/api/generate-plan', authenticateToken, aiLimiters, async (req, res) =
             return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
         }
 
+        // Week and cycle length come from the active cycle when there is one, so generating
+        // week 4 of 6 produces a week 4 of 6 rather than another week 1.
+        const activeCycle = await repo.getActiveCycle(req.user.id);
+        const totalWeeks = cycles.clampWeeks(req.body.totalWeeks || (activeCycle && activeCycle.total_weeks) || 6);
+        const weekNumber = Math.min(
+            (activeCycle && activeCycle.current_week) || 1,
+            totalWeeks
+        );
+
         const prompt = `You are an expert AI strength and conditioning coach.
+
+${cycles.phaseGuidance(weekNumber, totalWeeks)}
 
 User Profile:
 - Goal: ${primaryGoal}
@@ -158,7 +242,10 @@ ${workoutHistory ? JSON.stringify(workoutHistory) : 'None'}
 Recent Journal Feedback (use to adjust exercises or cycle phase):
 ${journalEntries ? JSON.stringify(journalEntries) : 'None'}
 
-Create a highly effective 1-week workout plan tailored to this user. 
+Create the week ${weekNumber} training week of this ${totalWeeks}-week cycle, tailored to this user.
+Programme it for the phase described above: a Base week and a Peak week of the same cycle should
+not look the same. Set "week" to ${weekNumber} in your response.
+
 Smart Programming Rules:
 1. Warmups and mobility work should NOT have a suggested weight, and should have appropriate reps (e.g. 15-20 or time-based).
 2. For main working sets, if the user has past performance history for a movement, suggest a challenging but realistic weight. If it's a new movement, omit suggestedWeight entirely.
@@ -191,6 +278,11 @@ Schema requirement:
             validate: validatePlan,
             label: 'generate-plan'
         });
+
+        // Authoritative, not advisory: the week is ours to decide, not the model's.
+        plan.week = weekNumber;
+        plan.totalWeeks = totalWeeks;
+        plan.phase = cycles.phaseForWeek(weekNumber, totalWeeks);
 
         res.json(plan);
 

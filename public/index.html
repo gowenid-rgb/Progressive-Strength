@@ -47,7 +47,7 @@
 
     <!-- Mobile Device Frame -->
     <div class="w-full max-w-md h-full sm:h-[850px] bg-background sm:rounded-[44px] sm:border sm:border-borderSubtle overflow-hidden flex flex-col relative smooth-shadow z-10">
-        
+
 
 
         <!-- SCREEN 0: AUTH -->
@@ -113,6 +113,18 @@
                     </div>
 
                     <div>
+                        <label class="block text-xs uppercase tracking-widest text-textMuted mb-4 font-semibold flex justify-between">
+                            <span>Cycle Length</span>
+                            <span id="weeks-val" class="text-white">6 Weeks</span>
+                        </label>
+                        <input id="input-weeks" type="range" min="2" max="16" value="6" class="w-full" oninput="setCycleWeeks(this.value)">
+                        <button type="button" id="btn-recommend-weeks" onclick="recommendCycleLength()" class="mt-4 w-full bg-surface border border-borderSubtle text-textMain py-3 rounded-2xl text-sm font-semibold hover:bg-surfaceElevated transition-colors">
+                            Not sure — recommend for me
+                        </button>
+                        <p id="weeks-rationale" class="hidden mt-3 text-xs text-textMuted leading-relaxed italic"></p>
+                    </div>
+
+                    <div>
                         <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">Additional Details (Optional)</label>
                         <textarea id="input-details" class="w-full h-24 bg-surface border border-borderSubtle rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none" placeholder="Describe the types of workouts you want, specific goals, injuries, etc."></textarea>
                     </div>
@@ -149,20 +161,12 @@
                  has to live here on the wrapper, not on the nodes, or it regresses the
                  moment a plan loads. -->
             <div class="px-6 pt-4 pb-2 relative z-0">
-                <div class="flex items-center justify-between relative">
+                <!-- Built by renderTimeline() from the cycle's phase list. Previously four
+                     hardcoded divs, which is why the timeline was decoration. -->
+                <div id="cycle-track" class="flex items-center justify-between relative">
                     <div class="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-surface border border-borderSubtle z-0"></div>
-                    
-                    <div id="cycle-node-1" class="z-10 bg-surfaceElevated w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted">W1</div>
-                    <div id="cycle-node-2" class="z-10 bg-background w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted">W2</div>
-                    <div id="cycle-node-3" class="z-10 bg-background w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted">W3</div>
-                    <div id="cycle-node-4" class="z-10 bg-background w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted">W4</div>
                 </div>
-                <div class="flex justify-between text-[8px] uppercase tracking-widest text-textMuted mt-2 font-semibold px-1">
-                    <span id="cycle-label-1" class="text-white">Base</span>
-                    <span id="cycle-label-2">Build</span>
-                    <span id="cycle-label-3">Peak</span>
-                    <span id="cycle-label-4">Deload</span>
-                </div>
+                <div id="cycle-labels" class="flex justify-between text-[8px] uppercase tracking-widest text-textMuted mt-2 font-semibold px-1"></div>
             </div>
 
             <div id="plan-days-container" class="p-6 space-y-4">
@@ -197,7 +201,7 @@
             </div>
             <div class="p-6 flex-1 flex flex-col">
                 <p class="text-sm text-textMuted mb-6 leading-relaxed">Describe what needs to change. The AI will recalibrate your upcoming sessions instantly.</p>
-                
+
                 <textarea id="input-adjust" class="w-full flex-1 bg-surface border border-borderSubtle rounded-3xl p-6 text-white text-base focus:outline-none focus:border-textMuted resize-none transition-colors" placeholder="E.g., 'My lower back is a bit tight, swap barbell squats for something gentler today'"></textarea>
 
                 <div class="mt-6 flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -205,7 +209,7 @@
                     <button onclick="appendAdjustText('More core focus')" class="shrink-0 bg-surface border border-borderSubtle px-4 py-2 rounded-full text-xs font-semibold text-textMain hover:bg-surfaceElevated transition-colors">More core focus</button>
                     <button onclick="appendAdjustText('Short on time')" class="shrink-0 bg-surface border border-borderSubtle px-4 py-2 rounded-full text-xs font-semibold text-textMain hover:bg-surfaceElevated transition-colors">Short on time</button>
                 </div>
-                
+
                 <div class="mt-8 pt-4 border-t border-borderSubtle">
                     <button id="btn-recalibrate" onclick="recalibratePlan()" class="w-full bg-white text-black py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
                         <span>Recalibrate Plan</span>
@@ -225,7 +229,7 @@
                 <div>
                     <h3 class="font-semibold text-lg text-white mb-2 tracking-tight">Milestone Reflection</h3>
                     <p class="text-sm text-textMuted mb-8 leading-relaxed">Reflect on your journey. This guides the architecture of your next cycle.</p>
-                    
+
                     <div class="space-y-6">
                         <div>
                             <label class="block text-xs uppercase tracking-widest text-textMuted mb-3 font-semibold">How is your energy? Any pains?</label>
@@ -236,7 +240,7 @@
                             <textarea id="journal-intentions" class="w-full h-28 bg-surface border border-borderSubtle rounded-[20px] p-5 text-sm text-white focus:outline-none focus:border-textMuted transition-colors resize-none"></textarea>
                         </div>
                     </div>
-                    
+
                     <div class="mt-8 pt-4 border-t border-borderSubtle">
                         <button id="btn-submit-journal" onclick="submitJournal()" class="w-full bg-white text-black py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-gray-200 transition-all active:scale-[0.98]">
                             <span>Save & Recalibrate Plan</span>
@@ -251,9 +255,9 @@
             <div class="p-6 pt-8 sticky top-0 bg-background/80 backdrop-blur-md z-10 border-b border-borderSubtle">
                 <h1 class="text-2xl font-semibold tracking-tight text-white">Progress</h1>
             </div>
-            
+
             <div class="p-6 space-y-6">
-                
+
                 <button id="btn-generate-recap" onclick="generateRecap()" class="w-full bg-surface border border-borderSubtle text-white py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-surfaceElevated transition-all active:scale-[0.98]">
                     <svg class="w-5 h-5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                     <span>Generate AI Weekly Recap</span>
@@ -276,7 +280,7 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Persistent Bottom Nav -->
         <div id="bottom-nav" class="hidden mt-auto glass-nav justify-around px-2 py-4 pb-6 sticky bottom-0 z-50">
             <button id="nav-plan" onclick="nav('screen-plan', 'nav-plan')" class="nav-btn text-textMuted flex flex-col items-center w-16 transition-colors hover:text-white">
@@ -297,6 +301,7 @@
 
     <script>
         let currentWorkoutPlan = null;
+        let currentCycle = null;   // { id, totalWeeks, currentWeek, phases: [{week, phase, label}] }
         let activeDayIndex = 0;
         let workoutStartTime = null;
         let workoutTimerInterval = null;
@@ -308,6 +313,44 @@
         function clearLocalSession() {
             SESSION_KEYS.forEach(k => localStorage.removeItem(k));
             currentWorkoutPlan = null;
+            currentCycle = null;
+        }
+
+        function setCycleWeeks(weeks) {
+            const n = Math.max(2, Math.min(16, parseInt(weeks, 10) || 6));
+            document.getElementById('input-weeks').value = n;
+            document.getElementById('weeks-val').innerText = n + (n === 1 ? ' Week' : ' Weeks');
+        }
+
+        async function recommendCycleLength() {
+            const btn = document.getElementById('btn-recommend-weeks');
+            const original = btn.innerHTML;
+            btn.innerHTML = 'Thinking...';
+            btn.disabled = true;
+            try {
+                const res = await fetch('/api/recommend-cycle-length', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                    body: JSON.stringify({
+                        primaryGoal: document.getElementById('input-goal').value,
+                        experienceLevel: document.getElementById('input-experience').value,
+                        trainingDays: document.getElementById('input-days').value,
+                        extraDetails: document.getElementById('input-details').value
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Could not get a recommendation');
+
+                setCycleWeeks(data.weeks);
+                const note = document.getElementById('weeks-rationale');
+                note.innerText = data.rationale;
+                note.classList.remove('hidden');
+            } catch (e) {
+                alert(e.message);
+            } finally {
+                btn.innerHTML = original;
+                btn.disabled = false;
+            }
         }
 
         function readLocalJournal() {
@@ -332,6 +375,8 @@
                 currentWorkoutPlan = null;
                 localStorage.removeItem('currentWorkoutPlan');
             }
+
+            currentCycle = data.cycle || null;
 
             const serverJournal = Array.isArray(data.workoutJournal) ? data.workoutJournal : [];
             const localJournal = readLocalJournal();
@@ -427,7 +472,7 @@
                 });
                 const data = await res.json();
                 if(!res.ok) throw new Error(data.error || 'Failed');
-                
+
                 // Drop everything belonging to whoever used this browser last, before the new
                 // session can adopt it. Without this, user B could push user A's history.
                 clearLocalSession();
@@ -447,7 +492,7 @@
                 alert(e.message);
             }
         }
-        
+
         // Saves the PLAN only. Workout history is append-only via POST /api/workouts, so
         // there is no longer any request that can overwrite past sessions wholesale -- the
         // structural fix for T1-1 and T3-3 rather than a guard against them.
@@ -458,10 +503,27 @@
             const res = await fetch('/api/user/data', {
                 method: 'POST',
                 headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ currentPlan: currentPlan ? JSON.parse(currentPlan) : null })
+                body: JSON.stringify({
+                    currentPlan: currentPlan ? JSON.parse(currentPlan) : null,
+                    // Only read on the save that creates the cycle; ignored afterwards.
+                    cycleOptions: {
+                        totalWeeks: currentCycle
+                            ? currentCycle.totalWeeks
+                            : (currentWorkoutPlan && currentWorkoutPlan.totalWeeks) || undefined,
+                        goal: (document.getElementById('input-goal') || {}).value,
+                        experienceLevel: (document.getElementById('input-experience') || {}).value,
+                        equipment: (document.getElementById('input-equipment') || {}).value,
+                        trainingDays: (document.getElementById('input-days') || {}).value
+                    }
+                })
             });
-            if (!res.ok) console.error('Plan save failed:', res.status);
-            return res.ok;
+            if (!res.ok) {
+                console.error('Plan save failed:', res.status);
+                return null;
+            }
+            const body = await res.json().catch(() => ({}));
+            if (body && body.cycle) currentCycle = body.cycle;
+            return body;
         }
 
         async function postWorkout(workoutLog) {
@@ -538,6 +600,54 @@
             activeBtn.classList.add('bg-white', 'text-black', 'shadow-sm');
         }
 
+        // Draws one node per week of the cycle, with its phase label. Falls back to the
+        // plan's own totalWeeks when there is no cycle yet (a plan generated before the cycle
+        // was saved), so the timeline is never blank.
+        function renderTimeline(currentWeek) {
+            const track = document.getElementById('cycle-track');
+            const labels = document.getElementById('cycle-labels');
+            if (!track || !labels) return;
+
+            const phases = (currentCycle && currentCycle.phases)
+                || (currentWorkoutPlan && currentWorkoutPlan.totalWeeks
+                    ? Array.from({ length: currentWorkoutPlan.totalWeeks }, (_, i) => ({ week: i + 1, label: '' }))
+                    : null);
+
+            if (!phases || phases.length === 0) {
+                track.innerHTML = '<div class="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-surface border border-borderSubtle z-0"></div>';
+                labels.innerHTML = '';
+                return;
+            }
+
+            // Past ~10 weeks the labels collide on a phone, so show phase names only at the
+            // boundaries where the phase actually changes.
+            const dense = phases.length > 8;
+
+            let nodes = '<div class="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-surface border border-borderSubtle z-0"></div>';
+            let labelHtml = '';
+
+            phases.forEach((p, idx) => {
+                const w = p.week;
+                const size = phases.length > 10 ? 'w-6 h-6 text-[8px]' : 'w-8 h-8 text-[10px]';
+                let cls;
+                if (w < currentWeek) {
+                    cls = `z-10 bg-white ${size} rounded-full border border-borderSubtle flex items-center justify-center font-bold text-black`;
+                } else if (w === currentWeek) {
+                    cls = `z-10 bg-surfaceElevated ${size} rounded-full border border-white flex items-center justify-center font-bold text-white shadow-[0_0_15px_rgba(255,255,255,0.3)]`;
+                } else {
+                    cls = `z-10 bg-background ${size} rounded-full border border-borderSubtle flex items-center justify-center font-bold text-textMuted`;
+                }
+                nodes += `<div class="${cls}">W${w}</div>`;
+
+                const changed = idx === 0 || phases[idx - 1].label !== p.label;
+                const show = !dense || changed;
+                labelHtml += `<span class="${w === currentWeek ? 'text-white' : 'text-textMuted'}" style="flex:1;text-align:center">${show ? (p.label || '') : ''}</span>`;
+            });
+
+            track.innerHTML = nodes;
+            labels.innerHTML = labelHtml;
+        }
+
         function renderPlan(plan) {
             // Update Title and Week
             document.getElementById('plan-title').innerText = plan.planName || document.getElementById('input-goal').value;
@@ -545,22 +655,7 @@
             document.getElementById('plan-week').innerText = 'Week ' + weekNum;
             document.getElementById('journal-week-badge').innerText = 'Week ' + weekNum;
 
-            // Update Timeline Visualizer
-            for (let i = 1; i <= 4; i++) {
-                const node = document.getElementById(`cycle-node-${i}`);
-                const label = document.getElementById(`cycle-label-${i}`);
-                
-                if (i < weekNum) {
-                    node.className = "z-10 bg-white w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-black";
-                    label.className = "text-textMuted";
-                } else if (i === weekNum) {
-                    node.className = "z-10 bg-surfaceElevated w-8 h-8 rounded-full border border-white flex items-center justify-center text-[10px] font-bold text-white shadow-[0_0_15px_rgba(255,255,255,0.3)]";
-                    label.className = "text-white";
-                } else {
-                    node.className = "z-10 bg-background w-8 h-8 rounded-full border border-borderSubtle flex items-center justify-center text-[10px] font-bold text-textMuted";
-                    label.className = "text-textMuted";
-                }
-            }
+            renderTimeline(weekNum);
 
             // Build Days HTML
             const container = document.getElementById('plan-days-container');
@@ -580,7 +675,7 @@
                         </div>`;
                         return;
                     }
-                    
+
                     uncompletedDays++;
 
                     let exercisesHtml = '';
@@ -608,18 +703,58 @@
                             ${exercisesHtml}
                         </div>
                     </div>`;
-                    
+
                     container.innerHTML += dayHtml;
                 });
-                
+
                 if (uncompletedDays === 0) {
-                    container.innerHTML += `
+                    const total = currentCycle ? currentCycle.totalWeeks : 1;
+                    const week = currentCycle ? currentCycle.currentWeek : 1;
+                    const isLastWeek = week >= total;
+
+                    container.innerHTML += isLastWeek
+                        ? `
                     <div class="bg-surface p-6 rounded-3xl border border-borderSubtle text-center text-textMuted">
-                        <h3 class="text-white font-semibold mb-2">Cycle Complete!</h3>
-                        <p class="text-sm mb-4">You have finished all workouts for this cycle.</p>
-                        <button onclick="nav('screen-journal', 'nav-journal')" class="bg-white text-black px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-200">Go to Journal to Recalibrate</button>
+                        <h3 class="text-white font-semibold mb-2">Cycle Complete</h3>
+                        <p class="text-sm mb-4">That is all ${total} ${total === 1 ? 'week' : 'weeks'} done. Reflect on how it went, then start your next cycle.</p>
+                        <button onclick="nav('screen-journal', 'nav-journal')" class="bg-white text-black px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-200">Go to Check-in</button>
+                    </div>`
+                        : `
+                    <div class="bg-surface p-6 rounded-3xl border border-borderSubtle text-center text-textMuted">
+                        <h3 class="text-white font-semibold mb-2">Week ${week} Complete</h3>
+                        <p class="text-sm mb-4">Nice work. Week ${week + 1} of ${total} is next.</p>
+                        <button id="btn-advance-week" onclick="advanceWeek()" class="bg-white text-black px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200">Start Week ${week + 1}</button>
                     </div>`;
                 }
+            }
+        }
+
+        // Moves the cycle on a week and generates that week's plan. The server owns the week
+        // number, so the new plan is programmed for the phase that week actually is.
+        async function advanceWeek() {
+            const btn = document.getElementById('btn-advance-week');
+            if (btn) { btn.innerHTML = 'Building next week...'; btn.disabled = true; }
+
+            try {
+                const res = await fetch('/api/cycle/advance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Could not advance the cycle');
+
+                if (data.completed) {
+                    currentCycle = null;
+                    alert('Cycle complete. Time to plan the next one.');
+                    nav('screen-onboarding');
+                    return;
+                }
+
+                currentCycle = data.cycle;
+                await generatePlan({ silent: true });
+            } catch (e) {
+                alert(e.message);
+                if (btn) { btn.innerHTML = 'Start next week'; btn.disabled = false; }
             }
         }
 
@@ -637,14 +772,14 @@
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify({ workoutHistory })
                 });
-                
+
                 if (!response.ok) throw new Error("Failed to generate recap");
-                
+
                 const recap = await response.json();
-                
+
                 document.getElementById('recap-title').innerText = recap.recapTitle;
                 document.getElementById('recap-message').innerText = recap.recapMessage;
-                
+
                 const statsContainer = document.getElementById('recap-stats-container');
                 statsContainer.innerHTML = '';
                 if (recap.stats) {
@@ -656,7 +791,7 @@
                         </div>`;
                     });
                 }
-                
+
                 document.getElementById('recap-container').classList.remove('hidden');
             } catch (err) {
                 console.error(err);
@@ -670,11 +805,11 @@
         function startWorkout(dayIndex) {
             activeDayIndex = dayIndex;
             const day = currentWorkoutPlan.days[dayIndex];
-            
+
             document.getElementById('active-workout-title').innerText = day.dayName || `Day ${dayIndex + 1}`;
             const container = document.getElementById('active-workout-exercises');
             container.innerHTML = '';
-            
+
             if (day.workoutIntro) {
                 container.innerHTML += `<div class="bg-surfaceElevated p-4 rounded-xl border border-borderSubtle mb-4 text-sm text-white italic">" ${day.workoutIntro} "</div>`;
             }
@@ -902,18 +1037,26 @@
             nav('screen-plan', 'nav-plan');
         }
 
-        async function generatePlan() {
-            const btn = document.getElementById('btn-generate');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-black" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Generating...</span>`;
-            btn.disabled = true;
+        async function generatePlan(opts = {}) {
+            // When advancing a week there is no onboarding form on screen, so the button
+            // spinner and the form fields are both skipped.
+            const btn = opts.silent ? null : document.getElementById('btn-generate');
+            const originalText = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-black" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Generating...</span>`;
+                btn.disabled = true;
+            }
+
+            const el = id => document.getElementById(id);
+            const totalWeeks = currentCycle ? currentCycle.totalWeeks : parseInt(el('input-weeks').value, 10);
 
             const payload = {
-                primaryGoal: document.getElementById('input-goal').value,
-                experienceLevel: document.getElementById('input-experience').value,
-                equipment: document.getElementById('input-equipment').value,
-                trainingDays: document.getElementById('input-days').value,
-                extraDetails: document.getElementById('input-details').value,
+                primaryGoal: el('input-goal').value,
+                experienceLevel: el('input-experience').value,
+                equipment: el('input-equipment').value,
+                trainingDays: el('input-days').value,
+                extraDetails: el('input-details').value,
+                totalWeeks,
                 workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]'),
                 journalEntries: JSON.parse(localStorage.getItem('journalEntries') || '[]')
             };
@@ -924,17 +1067,21 @@
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify(payload)
                 });
-                
+
                 if (!response.ok) {
                     const error = await response.json();
                     alert("Error: " + (error.error || "Failed to generate plan."));
                     return;
                 }
-                
+
                 const plan = await response.json();
-                console.log("GENERATED PLAN:", plan);
-                currentWorkoutPlan = plan; // Store state
-                localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
+                currentWorkoutPlan = plan;
+                localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan));
+
+                // The save response carries the cycle, including its phase list, so the
+                // timeline draws from the server's view rather than a guess.
+                const saved = await syncData();
+                if (saved && saved.cycle) currentCycle = saved.cycle;
 
                 renderPlan(plan);
                 nav('screen-plan', 'nav-plan');
@@ -942,8 +1089,10 @@
                 console.error(err);
                 alert("Network error.");
             } finally {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
+                if (btn) {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }
             }
         }
 
@@ -977,15 +1126,15 @@
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback, workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]') })
                 });
-                
+
                 if (!response.ok) {
                     const error = await response.json();
                     alert("Error: " + (error.error || "Failed to recalibrate plan."));
                     return;
                 }
-                
+
                 const plan = await response.json();
-                
+
                 if (currentWorkoutPlan && currentWorkoutPlan.days) {
                     plan.days.forEach((newDay, idx) => {
                         if (currentWorkoutPlan.days[idx] && currentWorkoutPlan.days[idx].completed) {
@@ -993,7 +1142,7 @@
                         }
                     });
                 }
-                
+
                 console.log("RECALIBRATED PLAN:", plan);
                 currentWorkoutPlan = plan; // Update state
                 localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
@@ -1018,7 +1167,7 @@
 
             const energy = document.getElementById('journal-energy').value;
             const intentions = document.getElementById('journal-intentions').value;
-            
+
             if (!energy.trim() && !intentions.trim()) {
                 alert("Please enter your reflections before saving.");
                 return;
@@ -1046,15 +1195,15 @@
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback: combinedFeedback, workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]') })
                 });
-                
+
                 if (!response.ok) {
                     const error = await response.json();
                     alert("Error: " + (error.error || "Failed to recalibrate plan."));
                     return;
                 }
-                
+
                 const plan = await response.json();
-                
+
                 if (currentWorkoutPlan && currentWorkoutPlan.days) {
                     plan.days.forEach((newDay, idx) => {
                         if (currentWorkoutPlan.days[idx] && currentWorkoutPlan.days[idx].completed) {
@@ -1068,8 +1217,8 @@
                 localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan)); await syncData();
 
                 renderPlan(plan);
-                document.getElementById('journal-energy').value = ''; 
-                document.getElementById('journal-intentions').value = ''; 
+                document.getElementById('journal-energy').value = '';
+                document.getElementById('journal-intentions').value = '';
                 alert("Journal saved and plan updated!");
                 nav('screen-plan', 'nav-plan');
             } catch (err) {

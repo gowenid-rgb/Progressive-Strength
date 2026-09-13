@@ -162,7 +162,7 @@ real problem and making future debugging much harder than it should be.
 
 ## Open Issues — Tier 3 (worth doing soon)
 
-### T3-1 — The cycle week never advances · `SUPERSEDED by T3-11`
+### T3-1 — The cycle week never advances · `FIXED by T3-11`
 
 **Where:** `server.js` prompts (week is hardcoded to 1 in the schema block); `index.html` `renderPlan()`
 
@@ -399,7 +399,7 @@ as the headline (it is what lifters actually track) with **session volume** as a
 
 ---
 
-## 4. T3-11 — Variable-length cycles · `OPEN` (supersedes `T3-1`)
+## 4. T3-11 — Variable-length cycles · `SHIPPED` 2026-09-12 (supersedes `T3-1`)
 
 **Complexity: medium-high.** Touches the schema, the prompts, the onboarding UI, the plan screen,
 and adds week-advancement logic that does not currently exist in any form.
@@ -517,7 +517,7 @@ Two reorderings fall out of that, and both are the opposite of the complexity ra
 |---|------|----------|------|
 | 1 | `T3-8` visual bug | Trivial, and `T3-11` rebuilds this timeline — fix the markup before building on it | none |
 | 2 | **`T3-14` schema redesign** | ✅ **SHIPPED** 2026-09-12 | `D10` ✅ |
-| 3 | `T3-11` variable cycles | Defines the cycle entity; gets the user training again on a 6-week cycle | `T3-14` |
+| 3 | `T3-11` variable cycles | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
 | 4 | `T3-9` exercise swap | Small once sets are normalised; wanted during the 6-week cycle | `T3-14` |
 | 5 | `T3-10` metrics + aggregates | Needs normalised sets **and** real history to display | `T3-14`, `T3-11` |
 | 6 | `T3-12` long-term AI review | Reads `T3-10` aggregates, not raw logs | `T3-10` |
@@ -1109,3 +1109,44 @@ documents what retired and why.
 **Not yet done, and the reason `T3-11` is next:** the schema supports N-week cycles, but the UI
 and prompts still only ever produce week 1. `total_weeks` is honoured when a client sends
 `cycleOptions`, and nothing sends it yet.
+
+### 2026-09-12 — T3-11 shipped: cycles are real
+
+Cycle length is the user's choice (2-16 weeks) with a **Not sure - recommend for me** button
+that asks the AI. The timeline renders one node per week from the cycle's phase list, weeks
+advance, and prompts are phase-aware. `T3-1` is finally fixed: the timeline was decoration for
+the app's whole life.
+
+**A note on expectations.** `T3-14` shipped a day's work that changed nothing visible, and the
+user reasonably asked why the app looked identical. That was a framing failure on my part rather
+than a surprise — infrastructure was exactly what it was — but worth remembering: when a change
+is deliberately invisible, say so before shipping it, not after.
+
+**The tests caught a real programming flaw, not a wrong expectation.** Phases were assigned by
+comparing each week's position against fraction thresholds (`< 0.4` base, `< 0.75` build). It
+read as a clean 40/35/25 split and was not: a 4-week cycle came out **base/base/build/deload,
+with no peak week at all**, and an 8-week cycle got only one. For a feature whose entire purpose
+is correct periodisation, that is the bug being shipped rather than fixed. Rewritten to compute
+explicit week counts with a floor of one week per phase. Verified across every length from 2 to
+16 - phases never move backwards, every cycle of 4+ weeks ends in a deload, and every phase gets
+at least one week.
+
+**The server owns the week number.** The prompt asks for week N of M, but `plan.week` is
+overwritten with the server's value regardless of what the model returns. The model is being
+asked to program a week, not to decide which week it is.
+
+**Phases are computed server-side and shipped whole** in the cycle payload, so the timeline and
+the prompt cannot disagree about what week 4 of 7 is. The alternative - duplicating the phase
+function in the inline client script - would have drifted the first time either changed.
+
+**Dense timelines collapse their labels.** Past 8 weeks the phase names are shown only where the
+phase changes, and nodes shrink past 10. A 16-week cycle still fits a phone.
+
+**Verified visually** at 375x812: the cycle length control, a 6-week timeline at week 3, a
+12-week timeline at week 7, and the `Week 3 Complete -> Start Week 4` card.
+
+Suite is now **221 assertions across seven files**.
+
+**Still queued:** `T3-9` (swap), `T3-10` (metrics), `T3-12` (long-term review), `T3-13`
+(two-agent check-in). The Metrics and Check-in screens the user asked about are `T3-10` and
+`T3-13` - still untouched, and next after swap.

@@ -50,6 +50,18 @@ async function startCycle(userId, opts = {}) {
     });
 }
 
+async function advanceCycleWeek(cycleId) {
+    // LEAST guards against advancing past the end of the cycle if two clients race.
+    const r = await db.query(
+        `UPDATE cycles
+            SET current_week = LEAST(current_week + 1, total_weeks)
+          WHERE id = $1 AND status = 'active'
+          RETURNING *`,
+        [cycleId]
+    );
+    return r.rows[0] || null;
+}
+
 async function endActiveCycle(userId, status = 'abandoned') {
     const r = await db.query(
         `UPDATE cycles SET status = $2, completed_at = now()
@@ -236,7 +248,7 @@ async function getJournalEntries(userId, limit = 20) {
 }
 
 module.exports = {
-    getActiveCycle, startCycle, endActiveCycle,
+    getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek,
     saveWeekPlan, getWeekPlan,
     appendWorkout, getWorkoutHistory,
     appendJournalEntry, getJournalEntries

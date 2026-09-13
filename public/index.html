@@ -228,7 +228,7 @@
 
             <div class="p-6">
                 <p class="text-sm text-textMuted mb-5 leading-relaxed">
-                    Anything worth remembering. How you felt, what was hard, a niggle, how you slept.
+                    Anything worth remembering. How you felt, what was hard, any aches, how you slept.
                     Your coach reads these alongside your training data.
                 </p>
 
@@ -250,32 +250,12 @@
 
         <!-- SCREEN 5: METRICS -->
         <div id="screen-metrics" class="screen flex-col h-full bg-background overflow-y-auto pb-24">
-            <div class="p-6 pt-8 sticky top-0 bg-background/80 backdrop-blur-md z-10 border-b border-borderSubtle">
+            <div class="p-6 pt-8 sticky top-0 bg-background/80 backdrop-blur-md z-20 border-b border-borderSubtle">
                 <h1 class="text-2xl font-semibold tracking-tight text-white">Progress</h1>
             </div>
 
-            <div class="p-6 space-y-6">
-
-                <button id="btn-generate-recap" onclick="generateRecap()" class="w-full bg-surface border border-borderSubtle text-white py-4 rounded-2xl font-semibold flex justify-center items-center space-x-2 hover:bg-surfaceElevated transition-all active:scale-[0.98]">
-                    <svg class="w-5 h-5 text-textMuted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                    <span>Generate AI Weekly Recap</span>
-                </button>
-
-                <div id="recap-container" class="hidden">
-                    <!-- AI Recap Content -->
-                    <div class="bg-surface p-6 rounded-[24px] border border-borderSubtle mb-6">
-                        <h3 id="recap-title" class="font-semibold text-white mb-3 text-lg tracking-tight">Title</h3>
-                        <p id="recap-message" class="text-sm text-textMuted leading-relaxed">Message goes here...</p>
-                    </div>
-
-                    <!-- AI Stats -->
-                    <div>
-                        <h3 class="font-semibold text-white mb-4 text-sm tracking-tight">Key Insights</h3>
-                        <div id="recap-stats-container" class="space-y-3">
-                            <!-- Injected stats -->
-                        </div>
-                    </div>
-                </div>
+            <div id="metrics-body" class="p-6 space-y-8">
+                <p class="text-sm text-textMuted">Loading...</p>
             </div>
         </div>
 
@@ -575,6 +555,7 @@
             }
 
             if (screenId === 'screen-journal') renderJournalEntries();
+            if (screenId === 'screen-metrics') loadMetrics();
 
             if(navBtnId) {
                 document.querySelectorAll('.nav-btn').forEach(b => {
@@ -758,48 +739,197 @@
             }
         }
 
-        async function generateRecap() {
-            const btn = document.getElementById('btn-generate-recap');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-3 text-white" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>Generating...</span>`;
-            btn.disabled = true;
+        // --- T3-10: Metrics -------------------------------------------------------------
+        //
+        // Static data, not an AI paragraph. The old tab spent a model call to produce prose
+        // that could not tell you what your bench had done since March, because nothing was
+        // ever computed from the training log.
+        //
+        // The chart is hand-rolled SVG (decision D8): the CSP allows scripts from a short
+        // allowlist, this is a PWA that should work offline, and one line chart is not worth
+        // a 200KB dependency plus the work of theming it to match.
 
-            const workoutHistory = JSON.parse(localStorage.getItem('workoutJournal') || '[]');
+        let metricsCache = null;
+        let metricsMovement = null;
 
+        async function loadMetrics() {
+            const body = document.getElementById('metrics-body');
+            body.innerHTML = '<p class="text-sm text-textMuted">Loading...</p>';
             try {
-                const response = await fetch('/api/generate-recap', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
-                    body: JSON.stringify({ workoutHistory })
+                const res = await fetch('/api/metrics', {
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
                 });
-
-                if (!response.ok) throw new Error("Failed to generate recap");
-
-                const recap = await response.json();
-
-                document.getElementById('recap-title').innerText = recap.recapTitle;
-                document.getElementById('recap-message').innerText = recap.recapMessage;
-
-                const statsContainer = document.getElementById('recap-stats-container');
-                statsContainer.innerHTML = '';
-                if (recap.stats) {
-                    recap.stats.forEach(stat => {
-                        statsContainer.innerHTML += `
-                        <div class="bg-surface p-5 rounded-[20px] border border-borderSubtle flex items-center justify-between">
-                            <div class="font-semibold text-sm text-white">${stat.label}</div>
-                            <div class="text-black font-semibold text-xs bg-white px-3 py-1.5 rounded-full">${stat.value}</div>
-                        </div>`;
-                    });
+                if (!res.ok) throw new Error('Could not load your metrics');
+                metricsCache = await res.json();
+                if (!metricsMovement || !metricsCache.trendable.includes(metricsMovement)) {
+                    metricsMovement = metricsCache.trendable[0] || null;
                 }
-
-                document.getElementById('recap-container').classList.remove('hidden');
-            } catch (err) {
-                console.error(err);
-                alert("Network error or AI failed.");
-            } finally {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
+                renderMetrics();
+            } catch (e) {
+                body.innerHTML = `<p class="text-sm text-textMuted">${escapeHtml(e.message)}</p>
+                    <button onclick="loadMetrics()" class="mt-4 bg-surface border border-borderSubtle text-white px-4 py-2 rounded-xl text-sm font-semibold">Retry</button>`;
             }
+        }
+
+        function fmtNumber(n) {
+            return Math.round(n).toLocaleString();
+        }
+
+        // Total tonnage gets large fast; "1.2M lb" reads better than eight digits on a phone.
+        function fmtVolume(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+            if (n >= 10000) return Math.round(n / 1000) + 'k';
+            return fmtNumber(n);
+        }
+
+        function statTile(label, value, sub) {
+            return `
+            <div class="bg-surface border border-borderSubtle rounded-[20px] p-4">
+                <div class="text-[9px] uppercase tracking-widest text-textMuted font-semibold mb-2">${escapeHtml(label)}</div>
+                <div class="text-2xl font-semibold text-white tracking-tight leading-none">${escapeHtml(String(value))}</div>
+                ${sub ? `<div class="text-[10px] text-textMuted mt-1.5">${escapeHtml(sub)}</div>` : ''}
+            </div>`;
+        }
+
+        function renderMetrics() {
+            const m = metricsCache;
+            const body = document.getElementById('metrics-body');
+            if (!m) return;
+
+            if (m.counts.allTime === 0) {
+                body.innerHTML = `
+                <div class="bg-surface border border-borderSubtle rounded-[24px] p-8 text-center">
+                    <h3 class="text-white font-semibold mb-2">Nothing logged yet</h3>
+                    <p class="text-sm text-textMuted leading-relaxed">Finish a workout and your numbers will start showing up here.</p>
+                </div>`;
+                return;
+            }
+
+            const movement = metricsCache.movements.find(x => x.name === metricsMovement);
+
+            body.innerHTML = `
+            <div>
+                <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Workouts</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    ${statTile('This Week', m.counts.week)}
+                    ${statTile('This Month', m.counts.month)}
+                    ${statTile('This Year', m.counts.year)}
+                    ${statTile('All Time', m.counts.allTime, m.totalSets + ' sets logged')}
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Weight Moved</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    ${statTile('This Week', fmtVolume(m.volume.week) + ' lb')}
+                    ${statTile('This Month', fmtVolume(m.volume.month) + ' lb')}
+                    ${statTile('This Year', fmtVolume(m.volume.year) + ' lb')}
+                    ${statTile('All Time', fmtVolume(m.volume.allTime) + ' lb')}
+                </div>
+                <p class="text-[10px] text-textMuted mt-3 leading-relaxed">Weight times reps, across every logged set. Bodyweight work is not counted, since the app does not know what you weigh.</p>
+            </div>
+
+            ${renderProgressionSection(movement)}
+
+            <div>
+                <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Best Sets</h3>
+                <div class="space-y-2">
+                    ${m.movements.filter(x => x.best).slice(0, 8).map(x => `
+                    <div class="bg-surface border border-borderSubtle rounded-[18px] px-4 py-3 flex items-center justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="text-sm text-white font-medium truncate">${escapeHtml(x.name)}</div>
+                            <div class="text-[10px] text-textMuted mt-0.5">${x.sessions} ${x.sessions === 1 ? 'session' : 'sessions'}</div>
+                        </div>
+                        <div class="text-sm font-semibold text-white whitespace-nowrap">${fmtNumber(x.best.weight)} × ${x.best.reps}</div>
+                    </div>`).join('')}
+                </div>
+            </div>`;
+        }
+
+        function renderProgressionSection(movement) {
+            const m = metricsCache;
+            if (!m.trendable.length) {
+                return `
+                <div>
+                    <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Progression</h3>
+                    <div class="bg-surface border border-borderSubtle rounded-[20px] p-6 text-center">
+                        <p class="text-sm text-textMuted leading-relaxed">A movement needs two logged sessions before there is a line to draw.</p>
+                    </div>
+                </div>`;
+            }
+
+            const options = m.trendable.map(n =>
+                `<option value="${escapeAttr(n)}"${n === metricsMovement ? ' selected' : ''}>${escapeHtml(n)}</option>`
+            ).join('');
+
+            return `
+            <div>
+                <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Progression</h3>
+                <div class="relative mb-3">
+                    <select onchange="metricsMovement = this.value; renderMetrics();" class="w-full p-3.5 bg-surface border border-borderSubtle rounded-2xl appearance-none focus:outline-none focus:border-textMuted text-sm text-textMain cursor-pointer">
+                        ${options}
+                    </select>
+                    <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-textMuted text-xs">▼</div>
+                </div>
+                ${lineChart(movement)}
+            </div>`;
+        }
+
+        // Heaviest set per session for one movement. Chosen over estimated 1RM or total volume
+        // because it is the number lifters actually track, and it does not silently change
+        // meaning when set counts change.
+        function lineChart(movement) {
+            if (!movement || movement.points.length < 2) return '';
+
+            const pts = movement.points;
+            const W = 320, H = 150;
+            const padL = 34, padR = 10, padT = 14, padB = 22;
+
+            const weights = pts.map(p => p.weight);
+            let lo = Math.min(...weights);
+            let hi = Math.max(...weights);
+            // A flat series would divide by zero and draw a line along the axis; give it room
+            // so a plateau still reads as a plateau rather than as an empty chart.
+            if (hi === lo) { hi = lo + Math.max(5, lo * 0.05); lo = Math.max(0, lo - Math.max(5, lo * 0.05)); }
+
+            const t0 = new Date(pts[0].date).getTime();
+            const t1 = new Date(pts[pts.length - 1].date).getTime();
+            const span = t1 - t0 || 1;
+
+            const x = p => padL + ((new Date(p.date).getTime() - t0) / span) * (W - padL - padR);
+            const y = p => padT + (1 - (p.weight - lo) / (hi - lo)) * (H - padT - padB);
+
+            const line = pts.map((p, i) => (i ? 'L' : 'M') + x(p).toFixed(1) + ' ' + y(p).toFixed(1)).join(' ');
+            const area = line + ` L${x(pts[pts.length - 1]).toFixed(1)} ${H - padB} L${x(pts[0]).toFixed(1)} ${H - padB} Z`;
+
+            const dots = pts.map(p =>
+                `<circle cx="${x(p).toFixed(1)}" cy="${y(p).toFixed(1)}" r="2.5" fill="#FFFFFF"/>`
+            ).join('');
+
+            const dateLabel = d => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            const first = pts[0], last = pts[pts.length - 1];
+            const change = last.weight - first.weight;
+            const changeText = change > 0 ? '+' + fmtNumber(change) + ' lb' : (change < 0 ? fmtNumber(change) + ' lb' : 'No change');
+
+            return `
+            <div class="bg-surface border border-borderSubtle rounded-[20px] p-4">
+                <div class="flex items-baseline justify-between mb-2">
+                    <span class="text-sm font-semibold text-white">${fmtNumber(last.weight)} lb × ${last.reps}</span>
+                    <span class="text-[11px] font-semibold ${change > 0 ? 'text-white' : 'text-textMuted'}">${escapeHtml(changeText)}</span>
+                </div>
+                <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:auto" role="img" aria-label="Heaviest set over time">
+                    <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="#222222" stroke-width="1"/>
+                    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#222222" stroke-width="1"/>
+                    <text x="4" y="${padT + 4}" fill="#888888" font-size="9">${fmtNumber(hi)}</text>
+                    <text x="4" y="${H - padB + 3}" fill="#888888" font-size="9">${fmtNumber(lo)}</text>
+                    <path d="${area}" fill="rgba(255,255,255,0.06)"/>
+                    <path d="${line}" fill="none" stroke="#FFFFFF" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"/>
+                    ${dots}
+                    <text x="${padL}" y="${H - 4}" fill="#888888" font-size="9">${escapeHtml(dateLabel(first.date))}</text>
+                    <text x="${W - padR}" y="${H - 4}" fill="#888888" font-size="9" text-anchor="end">${escapeHtml(dateLabel(last.date))}</text>
+                </svg>
+                <p class="text-[10px] text-textMuted mt-2">Heaviest set each session · ${movement.points.length} sessions</p>
+            </div>`;
         }
 
         function startWorkout(dayIndex) {

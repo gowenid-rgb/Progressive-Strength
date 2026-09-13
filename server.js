@@ -9,6 +9,7 @@ const {
 const db = require('./db');
 const repo = require('./repo');
 const cycles = require('./cycles');
+const { computeMetrics } = require('./metrics');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
 const { aiLimiters, authLimiter } = require('./rateLimits');
@@ -141,6 +142,19 @@ app.post('/api/journal', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error('Append journal entry failed:', err);
         res.status(500).json({ error: 'Failed to save journal entry' });
+    }
+});
+
+// Training aggregates. No AI, no cost, no latency beyond one query — the Metrics tab used to
+// be a button that spent a model call to produce a paragraph, which could not tell you what
+// your bench had done since March.
+app.get('/api/metrics', authenticateToken, async (req, res) => {
+    try {
+        const rows = await repo.getSetsForMetrics(req.user.id);
+        res.json(computeMetrics(rows, new Date()));
+    } catch (err) {
+        console.error('Metrics failed:', err);
+        res.status(500).json({ error: 'Failed to compute metrics' });
     }
 });
 

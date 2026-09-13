@@ -370,7 +370,7 @@ back toward the original.
 
 ---
 
-## 3. T3-10 — Rewrite the Metrics tab as real data, not AI · `OPEN`
+## 3. T3-10 — Rewrite the Metrics tab as real data, not AI · `SHIPPED` 2026-09-13
 
 **Complexity: medium.** The UI is straightforward. The data underneath is the actual work.
 
@@ -573,7 +573,7 @@ Two reorderings fall out of that, and both are the opposite of the complexity ra
 | 2 | **`T3-14` schema redesign** | ✅ **SHIPPED** 2026-09-12 | `D10` ✅ |
 | 3 | `T3-11` variable cycles | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
 | 4 | `T3-9` exercise swap | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
-| 5 | `T3-10` metrics + aggregates | Needs normalised sets **and** real history to display | `T3-14`, `T3-11` |
+| 5 | `T3-10` metrics + aggregates | ✅ **SHIPPED** 2026-09-13 | `T3-14` ✅, `T3-11` ✅ |
 | 6 | `T3-13a` journal capture log | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
 | 7 | `T3-13b` read-only coach | Needs history and notes; aggregates optional | `T3-13a` |
 | 8 | `T3-12` long-term AI review | Reads `T3-10` aggregates, not raw logs | `T3-10` |
@@ -1300,3 +1300,43 @@ looked like verification and was nothing of the sort. Same shape as the app bugs
 finding: a success message not backed by the thing it claims. Checks now run as separate commands.
 
 Suite is now **266 assertions across eight files**. Verified at 375x812.
+
+### 2026-09-13 — T3-10 shipped: Metrics is data
+
+The Metrics tab no longer spends a model call to produce a paragraph. Workouts this
+week/month/year/all-time, weight moved over the same periods, a progression chart per movement,
+and a best-sets list.
+
+**`metrics.js` is a pure function over rows with an injected clock.** No database, no `new Date()`
+of its own. Period boundaries and unit conversion are then testable directly instead of by seeding
+a database and hoping the calendar cooperates — the week-boundary cases in particular
+(a Sunday session belongs to the *previous* week; a Monday reference date must not roll back seven
+days) would have been miserable to pin down otherwise.
+
+**This is the aggregate layer `T3-12` reads,** not just a screen. A year of raw sets will not fit
+a context window at sensible cost, so the long-term review consumes the same computed summary the
+dashboard renders.
+
+**Progression is heaviest-set-per-session** (the open question from the last round). Chosen over
+estimated 1RM, which is a model of a number rather than a number, and over session volume, which
+silently changes meaning when set counts change. Volume is still shown, as a total rather than a
+trend.
+
+**Chart is hand-rolled SVG** (decision D8), about 50 lines. Two edge cases that would otherwise
+produce a broken chart: a **flat series** divides by zero on the y-scale and draws along the axis,
+so the range is padded and a plateau reads as a plateau; and **one session is a point, not a line**,
+so movements with a single session are excluded from the picker rather than rendering an empty box.
+
+**A known gap, deliberately not fixed today.** Bodyweight movements contribute no volume — the app
+does not know what you weigh, and inventing a number would corrupt the history the AI reads — and
+they have no "best set" in pounds, so they are absent from both volume totals and the best-sets
+list. Someone doing a lot of pull-ups has real training that does not appear anywhere on this
+screen. The fix is to track best *reps* for bodyweight movements as a separate series; logged as
+future work rather than bodged in.
+
+`/api/generate-recap` is now dead code — nothing calls it. Left in place rather than removed and
+re-added, since `T3-12` is the same shape and will either rework or replace it. It stays
+authenticated and rate-limited in the meantime.
+
+Suite is now **313 assertions across nine files**. Verified at 375x812 with a realistic year of
+data, plus the two-point and flat-line chart cases.

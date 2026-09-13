@@ -338,7 +338,7 @@ the header to `z-20` also works but leaves the same trap for the next person.
 
 ---
 
-## 2. T3-9 — Swap an exercise mid-workout · `OPEN`
+## 2. T3-9 — Swap an exercise mid-workout · `SHIPPED` 2026-09-12
 
 **Complexity: low-medium.** Self-contained UI, but it writes to the log, so it must respect the
 invariants `T1-2` established.
@@ -572,7 +572,7 @@ Two reorderings fall out of that, and both are the opposite of the complexity ra
 | 1 | `T3-8` visual bug | ✅ **SHIPPED** 2026-09-12 | none |
 | 2 | **`T3-14` schema redesign** | ✅ **SHIPPED** 2026-09-12 | `D10` ✅ |
 | 3 | `T3-11` variable cycles | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
-| 4 | `T3-9` exercise swap | Small once sets are normalised; wanted during the 6-week cycle | `T3-14` |
+| 4 | `T3-9` exercise swap | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
 | 5 | `T3-10` metrics + aggregates | Needs normalised sets **and** real history to display | `T3-14`, `T3-11` |
 | 6 | `T3-13a` journal capture log | Small, and removes a live silent-write bug | `T3-14` |
 | 7 | `T3-13b` read-only coach | Needs history and notes; aggregates optional | `T3-13a` |
@@ -1231,3 +1231,43 @@ someone. It is an argument for cheap frequent capture over structured prompting.
 Split into `T3-13a` (capture log, small, includes the bug fix) and `T3-13b` (read-only coach).
 **`T3-13b` no longer depends on `T3-10`** — history and notes already exist; aggregates improve the
 coach rather than enabling it. It can move ahead of the Metrics rewrite if wanted sooner.
+
+### 2026-09-12 — T3-9 shipped: mid-workout swaps
+
+A **Swap** button on every exercise in the workout player. Alternatives come from a static
+movement-pattern library (`public/exercises.js`, decision D7) so the picker opens instantly and
+works offline, plus an **Enter your own** field. Scope is a deliberate second step (decision D6):
+**Just this session** or **Rest of the cycle**.
+
+**The "rest of the cycle" case needed more than a plan edit.** Rewriting the current week's
+remaining days is the obvious half, but a week generated next Monday knows nothing about a swap
+made today — so "this and future" would silently have meant "this week only" the moment the next
+week was built. Migration 002 adds `cycles.substitutions`, and the plan prompt now carries a
+STANDING SUBSTITUTIONS block. **002 is the first data-preserving migration**; the free window that
+justified 001 dropping a table is closed.
+
+Substitution rules are **replaced, not appended**, for the same `from` movement, and chains
+collapse: swap A->B then B->C and the stored rule becomes A->C rather than a stale hop through B.
+Otherwise the prompt slowly fills with contradictions.
+
+**Completed days are never rewritten** by a persistent swap. They are history, not plan.
+
+`swappedFrom` records the ROOT original across repeated swaps, so A->B->C still reports that C
+replaced A. Without it the AI sees someone who quietly stopped doing pull-ups with no idea it was
+an equipment constraint rather than a programming choice.
+
+Swapping also **drops the old `suggestedWeight`** — it belonged to the previous movement, and under
+the pre-`T1-2` rules it would have been logged as the fallback for an untouched set.
+
+**Two bugs found by the tests, neither related to swapping:**
+
+`schema.test.js` asserted the migration list equalled `['001_...']` exactly, so it broke the moment
+a second migration existed. Now asserts inclusion and filename ordering.
+
+More interesting: `getWorkoutHistory` and `getJournalEntries` ordered only by timestamp. Two
+entries written in the same instant share `created_at`, making their order arbitrary — including
+the order the "Prev" column walks. Adding 002 perturbed the timing enough to expose it. Both
+queries now break ties on `id`. Latent since `T3-14`, nothing to do with this feature.
+
+Suite is now **253 assertions across eight files**. Verified in the browser at 375x812: picker,
+scope step, and the applied swap with its "Swapped from Pull Ups" badge.

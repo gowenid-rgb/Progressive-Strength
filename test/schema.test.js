@@ -91,7 +91,9 @@ function installPgShim(pglite) {
     console.log('\n=== T3-14: migration runner ===\n');
 
     const ran = await migrate(db);
-    check('applies migration 001', ran, ['001_phase2_schema.sql']);
+    // Inclusion, not equality: this list grows with every migration added after this test.
+    check('applies migration 001', ran.includes('001_phase2_schema.sql'), true);
+    check('applies pending migrations in filename order', ran.slice().sort().join() === ran.join(), true);
 
     const again = await migrate(db);
     check('is idempotent — second run applies nothing', again, []);

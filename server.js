@@ -138,6 +138,25 @@ app.post('/api/journal', authenticateToken, async (req, res) => {
     }
 });
 
+// Records a permanent substitution (T3-9). Session-only swaps never reach the server —
+// they are captured in workout_sets.swapped_from when the workout is logged.
+app.post('/api/cycle/substitutions', authenticateToken, async (req, res) => {
+    try {
+        const from = String((req.body && req.body.from) || '').trim();
+        const to = String((req.body && req.body.to) || '').trim();
+        if (!from || !to) return res.status(400).json({ error: 'Both from and to are required' });
+
+        const cycle = await repo.getActiveCycle(req.user.id);
+        if (!cycle) return res.status(400).json({ error: 'No active cycle' });
+
+        const substitutions = await repo.addSubstitution(cycle.id, from, to);
+        res.json({ success: true, substitutions });
+    } catch (error) {
+        console.error('Error saving substitution:', error);
+        res.status(500).json({ error: 'Failed to save substitution' });
+    }
+});
+
 // Recommends a cycle length for users who pick "Not sure". A small, cheap call: the
 // alternative is making someone guess at periodisation before they have trained once.
 app.post('/api/recommend-cycle-length', authenticateToken, aiLimiters, async (req, res) => {
@@ -225,9 +244,22 @@ app.post('/api/generate-plan', authenticateToken, aiLimiters, async (req, res) =
             totalWeeks
         );
 
+        // Permanent swaps must survive into weeks generated later, or "this and future"
+        // silently means "this week only" the moment the next week is built.
+        const subs = activeCycle ? await repo.getSubstitutions(activeCycle.id) : [];
+        const subsBlock = subs.length
+            ? [
+                '',
+                '',
+                'STANDING SUBSTITUTIONS — the user has permanently replaced these movements.',
+                'Program the replacement, never the original:',
+                subs.map(x => '- Use "' + x.to + '" instead of "' + x.from + '"').join('\n')
+              ].join('\n')
+            : '';
+
         const prompt = `You are an expert AI strength and conditioning coach.
 
-${cycles.phaseGuidance(weekNumber, totalWeeks)}
+${cycles.phaseGuidance(weekNumber, totalWeeks)}${subsBlock}
 
 User Profile:
 - Goal: ${primaryGoal}

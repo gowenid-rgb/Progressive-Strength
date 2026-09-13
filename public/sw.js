@@ -1,7 +1,8 @@
-const CACHE_NAME = 'prog-strength-v2';
+const CACHE_NAME = 'prog-strength-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
+  '/exercises.js',
   '/manifest.json',
   '/icon-192.jpg',
   '/icon-512.jpg'

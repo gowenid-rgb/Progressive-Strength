@@ -98,16 +98,46 @@ async function testSessionLifecycle() {
     check('plan hydrated', JSON.parse(t.store.get('currentWorkoutPlan')).planName, 'P');
     check('navigated to plan screen', t.log.nav, 'screen-plan');
 
-    // Server has no plan, but this browser holds a stale one.
+    // Server has no plan, but this browser holds a stale one. The PLAN follows the server;
+    // the JOURNAL does not, because an empty server journal is indistinguishable from one
+    // destroyed by the old sync bug (see the rescue rule in hydrateFromServer).
     t = sessionHarness(
         { token: 'TOKEN-A', currentWorkoutPlan: JSON.stringify({ planName: 'STALE' }), workoutJournal: '[{"date":"old"}]' },
         { currentPlan: null, workoutJournal: [] }
     );
     await t.boot();
     check('stale plan cleared when server has none', t.store.get('currentWorkoutPlan'), undefined);
-    check('stale journal replaced by server value', t.store.get('workoutJournal'), '[]');
     check('in-memory plan cleared', t.ctx.__getPlan(), null);
     check('sent to onboarding', t.log.nav, 'screen-onboarding');
+
+    // --- Rescue rule: this device holds history the server lost.
+    // Deploying the fix without this would destroy the last surviving copy for exactly the
+    // users the original bug hit hardest.
+    t = sessionHarness(
+        { token: 'TOKEN-A', workoutJournal: '[{"date":"w1"},{"date":"w2"},{"date":"w3"}]' },
+        { currentPlan: { planName: 'P', days: [] }, workoutJournal: [] }
+    );
+    await t.boot();
+    check('stranded history is NOT wiped by an empty server', JSON.parse(t.store.get('workoutJournal')).length, 3);
+    const rescuePosts = t.calls.filter(c => c.method === 'POST' && c.url === '/api/user/data');
+    check('stranded history is pushed back to the server', rescuePosts.length, 1);
+    check('the push carries all 3 workouts', JSON.parse(rescuePosts[0].body).workoutJournal.length, 3);
+
+    // Normal case: server has history too, so the server wins and no push happens.
+    t = sessionHarness(
+        { token: 'TOKEN-A', workoutJournal: '[{"date":"local-old"}]' },
+        { currentPlan: null, workoutJournal: [{ date: 's1' }, { date: 's2' }] }
+    );
+    await t.boot();
+    check('server history overwrites local when server has data', JSON.parse(t.store.get('workoutJournal')).length, 2);
+    check('server value wins, not merged', JSON.parse(t.store.get('workoutJournal'))[0].date, 's1');
+    check('no rescue push when server has data', t.calls.filter(c => c.method === 'POST').length, 0);
+
+    // Both empty: nothing to rescue, nothing to push.
+    t = sessionHarness({ token: 'TOKEN-A' }, { currentPlan: null, workoutJournal: [] });
+    await t.boot();
+    check('empty/empty writes an empty journal', t.store.get('workoutJournal'), '[]');
+    check('empty/empty makes no push', t.calls.filter(c => c.method === 'POST').length, 0);
 
     // No token, but leftover data from a previous user on this browser.
     t = sessionHarness(
@@ -128,6 +158,8 @@ async function testSessionLifecycle() {
     await t.ctx.handleAuth('login');
     check('login makes NO data POST', t.calls.filter(c => c.method === 'POST' && c.url === '/api/user/data').length, 0);
     check("user A's plan gone after B logs in", t.store.get('currentWorkoutPlan'), undefined);
+    // Critically: the rescue rule must NOT resurrect user A's journal into user B's account.
+    // clearLocalSession() runs before hydrate, so there is nothing left to rescue.
     check("user A's journal gone after B logs in", t.store.get('workoutJournal'), '[]');
     check('token replaced with B token', t.store.get('token'), 'TOKEN-B');
     const authCall = t.calls.find(c => c.url.startsWith('/api/auth/'));

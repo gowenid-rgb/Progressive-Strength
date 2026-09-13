@@ -305,9 +305,18 @@
             currentWorkoutPlan = null;
         }
 
+        function readLocalJournal() {
+            try {
+                const parsed = JSON.parse(localStorage.getItem('workoutJournal') || '[]');
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (e) {
+                return [];
+            }
+        }
+
         // Rebuilds local state from a server response. Keys the server has no value for are
         // explicitly cleared, so data from a previous session can never survive into this one.
-        // Never pushes: the server is the source of truth whenever we are reading from it.
+        // Returns the number of workouts rescued (see below); 0 in the normal case.
         function hydrateFromServer(data) {
             if (data.currentPlan) {
                 currentWorkoutPlan = typeof data.currentPlan === 'string'
@@ -318,7 +327,27 @@
                 currentWorkoutPlan = null;
                 localStorage.removeItem('currentWorkoutPlan');
             }
-            localStorage.setItem('workoutJournal', JSON.stringify(data.workoutJournal || []));
+
+            const serverJournal = Array.isArray(data.workoutJournal) ? data.workoutJournal : [];
+            const localJournal = readLocalJournal();
+
+            // One-time rescue for history stranded by the pre-fix sync bug.
+            //
+            // That bug wiped the server's journal whenever the user signed in on a new device,
+            // but the old boot sequence also re-uploaded whatever the original device still had,
+            // so that device often held the only surviving copy. Blindly hydrating an empty
+            // server journal over a populated local one would destroy it for good — finishing
+            // the data loss for exactly the users the bug already hurt.
+            //
+            // So: an empty server journal never overwrites a populated local one. The caller
+            // pushes the local copy back up instead. This cannot resurrect another user's data,
+            // because every session boundary clears localStorage before we get here.
+            if (serverJournal.length === 0 && localJournal.length > 0) {
+                return localJournal.length;
+            }
+
+            localStorage.setItem('workoutJournal', JSON.stringify(serverJournal));
+            return 0;
         }
 
         function logout() {
@@ -348,7 +377,14 @@
                 // FROM the server, and pushing it back used to overwrite the server's journal
                 // with whatever stale value this browser happened to hold - on a new device,
                 // an empty array. That silently destroyed the user's entire lift history.
-                hydrateFromServer(data);
+                const rescued = hydrateFromServer(data);
+
+                // The only circumstance in which boot writes to the server: this device holds
+                // history the server lost. Push it back up before anything else can overwrite it.
+                if (rescued > 0) {
+                    console.warn('Restoring ' + rescued + ' workout(s) the server was missing.');
+                    await syncData();
+                }
 
                 if (currentWorkoutPlan) {
                     renderPlan(currentWorkoutPlan);

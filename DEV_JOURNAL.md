@@ -194,7 +194,7 @@ payload and the GET response. Needs the `ALTER TABLE` path noted in **Constraint
 
 ---
 
-### T3-3 — Last-write-wins blob sync · `OPEN` — **promoted to Phase 2 foundation**
+### T3-3 — Last-write-wins blob sync · `ABSORBED by T3-14`
 
 **Symptom:** Two open tabs, or a phone plus a laptop, and the loser's data silently vanishes.
 No version check, no merge, no conflict surface.
@@ -494,7 +494,122 @@ It also needs the same validation rigour as `T2-1` — a model-authored plan tha
 
 ---
 
-## Phase 2 open questions
+---
+
+# Phase 2 — Build order
+
+**Superseded the complexity ranking on 2026-09-12** at the user's direction: order by design and
+dependency, not by how hard each piece is. `D10` was answered yes — purge and redesign — which
+makes the schema the keystone and changes what sensibly comes first.
+
+Two reorderings fall out of that, and both are the opposite of the complexity ranking:
+
+- **`T3-9` (swap) moves later.** It writes sets. Building it against the current blob and again
+  against the new tables is the exact rework `D10` exists to avoid.
+- **`T3-11` (cycles) moves ahead of `T3-10` (metrics).** After the purge there is no plan and no
+  history. A metrics dashboard with nothing to display cannot be built or judged, and no history
+  accumulates until there is a cycle to train against. Cycles first is forced by reality, not
+  preference.
+
+## Order
+
+| # | Item | Why here | Gate |
+|---|------|----------|------|
+| 1 | `T3-8` visual bug | Trivial, and `T3-11` rebuilds this timeline — fix the markup before building on it | none |
+| 2 | **`T3-14` schema redesign** | The keystone. Free exactly once | `D10` ✅ |
+| 3 | `T3-11` variable cycles | Defines the cycle entity; gets the user training again on a 6-week cycle | `T3-14` |
+| 4 | `T3-9` exercise swap | Small once sets are normalised; wanted during the 6-week cycle | `T3-14` |
+| 5 | `T3-10` metrics + aggregates | Needs normalised sets **and** real history to display | `T3-14`, `T3-11` |
+| 6 | `T3-12` long-term AI review | Reads `T3-10` aggregates, not raw logs | `T3-10` |
+| 7 | `T3-13` two-agent check-in | Needs a cycle to adjust and history to discuss | `T3-11`, `T3-10` |
+
+Steps 3 and 4 are what get the app usable again after the purge. Steps 5-7 are what make it good.
+
+---
+
+## T3-14 — Phase 2 schema redesign · `OPEN` (absorbs `T3-3`)
+
+Replaces the two-JSONB-blob model. **Destructive: existing user data is purged**, agreed
+2026-09-12 on the basis that the only user is the developer, who intends to rebuild as a 6-week
+cycle regardless.
+
+### Why the current model blocks everything downstream
+
+`user_data` holds one `current_plan` blob and one `workout_journal` blob per user. That means no
+cycle entity, no plan history, every save rewrites everything, and weight and reps are free text.
+Metrics cannot be queried, progress cannot be plotted, and the AI cannot be given a compact view
+of a year.
+
+### Target shape
+
+```sql
+cycles          -- one row per training cycle
+  id, user_id, name, goal, experience_level, equipment, training_days,
+  extra_details, total_weeks, current_week, status, created_at, completed_at
+
+week_plans      -- D3: N distinct plans, one per week, generated a week ahead
+  id, cycle_id, week_number, phase, plan JSONB, status, generated_at
+  UNIQUE (cycle_id, week_number)
+
+workouts        -- one row per completed session
+  id, user_id, cycle_id, week_number, day_index, day_name,
+  started_at, finished_at, duration_seconds
+
+workout_sets    -- the row that makes metrics and long-term AI possible
+  id, workout_id, exercise_name, exercise_order, set_number,
+  weight_value NUMERIC, weight_unit TEXT, is_bodyweight BOOLEAN,
+  reps_value INTEGER,
+  weight_raw TEXT, reps_raw TEXT,     -- exactly what the user typed
+  swapped_from TEXT,                  -- T3-9 substitution flag
+  logged_at
+
+journal_entries -- check-in reflections, finally server-side (fixes T3-2)
+  id, user_id, cycle_id, week_number, energy, intentions, created_at
+```
+
+`chat_messages` arrives with `T3-13`; not built now, but the shape above leaves room for it.
+
+### Design notes
+
+**Keep the raw strings.** `weight_value` is parsed for querying; `weight_raw` preserves the
+literal input. Storing only the parse means a parser bug silently rewrites training history —
+the same class of failure as `T1-2`, where the app recorded numbers the user never entered. The
+normalised column is a convenience; the raw column is the record.
+
+**`plan` stays JSONB.** Exercises within a week are read and written whole and never queried
+across rows. Normalising them would add joins for nothing. Sets are different: they are exactly
+what gets aggregated, so they become real columns.
+
+**`week_plans` keeps history** (`D4`), so an adjustment in `T3-13` can rewrite an upcoming week
+without touching completed ones, and `T3-12` can look back across cycles.
+
+**`cycles.current_week` drives advancement,** replacing today's `day.completed` flags as the only
+notion of progress.
+
+### Do the migration mechanism now, not later
+
+The **Constraints** section notes that `initDB()` uses `CREATE TABLE IF NOT EXISTS` and therefore
+cannot alter an existing table. Purging sidesteps that once. It will not be available again.
+
+So `T3-14` should also add a minimal migration runner — numbered SQL files plus a
+`schema_migrations` table recording what has been applied. Perhaps 40 lines. Without it the same
+wall is hit at `T3-13` (adding `chat_messages`), except by then there is real data behind it.
+
+**This is the part of `T3-14` that outlasts `T3-14`.** The free window is being spent either way;
+spending it on a mechanism rather than only on tables is what stops this recurring.
+
+### Open questions
+
+- Units: store everything in one canonical unit, or per-set with a user preference? Recommend
+  per-set `weight_unit` with a display preference, since converting on write loses fidelity and
+  lifters do not think in converted numbers.
+- Does `workouts` need a `notes` field for per-session comments? Cheap now, awkward later.
+
+
+## Phase 2 design rationale
+
+Reasoning behind D6-D10. **Current status is tracked in `Decisions & open questions` below** --
+that table is authoritative; this one records why each recommendation was made.
 
 | # | Question | Blocks | Recommendation |
 |---|----------|--------|----------------|
@@ -513,10 +628,14 @@ Cross-cutting things to settle before they force rework.
 |---|----------|----------------|--------|
 | D1 | Is this single-user, friends-only, or public? | Drives `T2-3`, registration policy, and how much `T3-3` matters | **Unanswered** |
 | D2 | Is the checkmark authoritative, or are typed values? | Blocks `T1-2` | ✅ **Decided 2026-09-12** — checkmark only |
-| D3 | Is a "cycle" 4 distinct weekly plans, or one plan progressively loaded? | Blocks `T3-1`, shapes schema in `T3-3` | **Unanswered** |
-| D4 | Keep plan history, or only ever the current plan? | Schema decision; cheaper to make now than later | **Unanswered** |
+| D3 | Is a "cycle" N distinct weekly plans, or one plan progressively loaded? | Blocks `T3-11`, shapes `T3-14` | ✅ **Decided 2026-09-12** — N distinct plans, generated a week ahead |
+| D4 | Keep plan history, or only ever the current plan? | Schema decision; shapes `T3-14` | ✅ **Settled 2026-09-12** — keep, forced by `T3-12` |
 | D5 | Does the clone live inside OneDrive or outside it? | Blocks `T1-0` | ✅ **Decided 2026-09-12** — outside |
-| D6-D10 | Phase 2 design questions | See **Phase 2 open questions** above | **Unanswered** |
+| D6 | Does an exercise swap persist beyond the session? | `T3-9` | **Unanswered** |
+| D7 | Swap alternatives: static map or AI? | `T3-9` | ✅ **Decided 2026-09-12** — static map |
+| D8 | Chart: hand-rolled SVG or a library? | `T3-10` | **Unanswered** |
+| D9 | Does the adjustment agent apply changes directly? | `T3-13` | **Unanswered** — recommend preview+confirm |
+| D10 | Take the schema foundation early, while purging is free? | `T3-10`, `T3-11` | ✅ **Decided 2026-09-12** — yes, purge and redesign |
 
 ### D2 — resolved
 
@@ -866,3 +985,36 @@ logs will not fit a context window affordably.
 **One principle carried forward into `T3-13`:** the adjustment agent gets write access to the
 user's plan, which is precisely the shape of every bug Tier 1 just fixed. It must preview changes
 and require confirmation. Never silent. Recorded as `D9`.
+
+### 2026-09-12 — Build order set by dependency; D3, D4, D7, D10 resolved
+
+User agreed to the purge and redesign (`D10`), and directed that ordering follow design rather
+than complexity. `D3` resolved as N distinct weekly plans generated a week ahead; `D7` as a static
+alternatives map.
+
+`D4` (keep plan history) is settled by implication rather than choice: requirement #2, an AI that
+reviews progress across a year, is not possible without retained history. Recording it as forced
+by the feature rather than as an open preference.
+
+**Two items moved against the complexity ranking, both for the same reason:**
+
+`T3-9` (swap) drops from second to fourth. It writes sets, so building it before the schema means
+building it twice — the precise rework `D10` was meant to eliminate.
+
+`T3-11` (cycles) moves ahead of `T3-10` (metrics). After the purge there is no plan and no
+history; a metrics dashboard cannot be built or evaluated against an empty database, and no
+history accumulates until there is a cycle to train against. This one is forced by reality rather
+than chosen.
+
+**`T3-14` opened for the schema redesign**, absorbing `T3-3`. Two decisions inside it worth
+flagging:
+
+*Keep the raw strings alongside the parsed values.* `weight_value` makes metrics queryable;
+`weight_raw` preserves what the user actually typed. Storing only the parse means a parser bug
+silently rewrites training history — the same failure class as `T1-2`. The normalised column is
+a convenience; the raw column is the record.
+
+*Build the migration runner as part of this work.* The purge sidesteps the
+`CREATE TABLE IF NOT EXISTS` limitation exactly once. Without a real mechanism the same wall
+arrives at `T3-13`, with real data behind it by then. That is the part of `T3-14` that outlasts
+`T3-14`.

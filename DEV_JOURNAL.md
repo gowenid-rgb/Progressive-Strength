@@ -454,45 +454,97 @@ A year of training is not much data, but recomputing it on every AI call is wast
 
 ---
 
-## 6. T3-13 — Split Check-in into two agents · `OPEN`
+## 6. T3-13a — Journal becomes a capture log · `OPEN`
 
-**Complexity: highest.** New interaction model, new persistence, two privilege levels, and it is
-the first place an AI gets write access to the user's plan.
+**Complexity: low.** Contains a live bug fix.
 
-**What:** the Check-in screen becomes two distinct things:
+**Reshaped 2026-09-12.** The original plan split Check-in into two agents, one read-only and one
+able to change the programme. That split turned out to be unnecessary: **Adjust Program already
+provides it, spatially.** It sits behind an icon on the Plan screen, away from everyday flow,
+where it cannot be triggered by accident. The user was right that it is well placed.
 
-1. **Ask** — a read-only chat that knows your program and history. Questions about this week, next
-   week, a specific movement, technique, or why the programme looks the way it does. **No ability
-   to change anything.**
-2. **Request adjustments** — a separate input that *can* modify the cycle. "My back feels better,
-   add front squats back in." "I am getting sick, taking this week off, start a new cycle next
-   week."
+Which exposes the real problem. **The Journal tab rewrites your plan today.** "Save & Recalibrate
+Plan" POSTs to `/api/recalibrate-plan` on every save, so the casual reflection screen has exactly
+the write power the deliberate one has — and warns you about it far less. That is a live silent-write
+bug of the same family as everything Tier 1 fixed.
 
-**Why this split is right:** it makes capability legible. The user always knows whether they are
-talking to something that can change their programme. Today's single feedback box silently
-recalibrates the whole plan on every submission, which is why a stray comment can rewrite a week.
+### What the Journal is for
 
-**Systems touched:**
-- **New UI** — message list, turn-taking, pending/failed states. Nothing in the app does this today
-- **New persistence** — conversation history, which is new data and probably a new table
-- **Two prompt contexts** with genuinely different tool access
-- **Rate limiting (`T2-3`)** — chat is many more calls than one-shot generation. Current caps
-  (10/15min) would be hit in a single real conversation. Needs its own budget
-- **Cost** — the first feature where usage scales with conversation length rather than actions
+Two activities were conflated, with different rhythms:
 
-**The important design rule — and it is the lesson of this entire session.** The adjustment agent
-writes to the user's plan. Every silent-data-corruption bug we just spent Tier 1 fixing came from
-something changing the user's data without the user seeing it happen.
+- **Capture** — frequent, fast, expects no answer. *"Left shoulder tweaked on incline."* *"Slept
+  five hours."* It has to take eight seconds, in a gym, possibly offline.
+- **Consultation** — occasional, deliberate. *"My shoulder has been off for two weeks, what should
+  I do about pressing?"*
 
-> **The adjustment agent must preview its changes and require confirmation before applying them.**
-> Show a diff: these exercises removed, these added, this week rescheduled. Never apply silently.
+Merging them makes capture expensive. If every note triggers a coaching reply, you stop writing
+notes — but the coach still needs to have read them. So: one tab, separate actions.
 
-It also needs the same validation rigour as `T2-1` — a model-authored plan that fails
-`validatePlan()` must never overwrite a good one.
+### Shape
 
-**Depends on:** `T3-10` (history context) and `T3-11` (a cycle model to adjust).
+- A single free-text field. No prompts, no categories, no energy/intentions split. An info dump.
+- **Save writes a timestamped entry and makes no AI call.** Instant, free, works offline.
+- The running log below it. Valuable with no AI involved at all — it is a training diary.
+- Asking the coach is a separate action (`T3-13b`).
+
+### Why notes matter more than they look
+
+They have three consumers, and the least obvious is the most valuable:
+
+1. The coach — immediate advice
+2. The plan generator — already reads journal entries today
+3. **Long-term review (`T3-12`)** — *"your left shoulder has come up six times since March, always
+   on pressing days"*
+
+Nothing else in the app captures that. Workout data records what was lifted; only notes record
+that it felt terrible. A year of them is what makes a coach sound like it knows you rather than
+reciting your numbers back. That argues for capture being cheap and frequent, not gated behind a
+conversation.
+
+Entries already carry `cycle_id` and `week_number` from `T3-14`, so temporal context is free.
+Freeform text plus timestamps is enough — the model extracts meaning well, and asking the user to
+tag things adds friction for little return.
+
+### Work
+
+- Migration **002**: add `note TEXT` to `journal_entries`, backfilling from the existing
+  `energy`/`intentions` columns. Keep the old columns; do not drop data.
+- `/api/journal` accepts a single `note`.
+- Rewrite the Journal screen: one field, a Save that only saves, and the entry log.
+- **Remove the `/api/recalibrate-plan` call.** The Journal gets no write access to programming.
+
+**Note:** 002 is the first *data-preserving* migration. 001 could be destructive because the free
+window was open; from here migrations carry real history forward. This is the mechanism from
+`T3-14` earning its place.
 
 ---
+
+## 7. T3-13b — Read-only AI coach · `OPEN`
+
+**Complexity: medium-high.** New interaction model and new persistence, but half the original
+scope now that the agent split is handled by layout.
+
+**What:** a chat that knows your programme and history and answers questions about it. Questions
+about this week, a specific movement, technique, why the programme looks the way it does.
+
+**It cannot change anything, and says so usefully.** Asked for a change, it answers and names where
+to act: *"Go into Adjust Program and ask to swap back squats for a few weeks."* Naming the place is
+the point — refusing alone teaches the user nothing about where the capability lives.
+
+**What it reads:** current cycle and week plan, recent workout history, all journal notes, and
+`T3-10` aggregates once they exist.
+
+**Dependency change:** this **no longer requires `T3-10`**. History and notes both exist today;
+aggregates make the coach better, not possible. `T3-13b` can move ahead of the Metrics rewrite if
+the coach is wanted sooner.
+
+**Constraints:**
+- **Cost scales with conversation length**, unlike every other AI call in the app. The current caps
+  (10 per 15 min, 40 per day) are sized for one-shot generation and would be exhausted in a single
+  real conversation. Chat needs its own budget.
+- **Context per turn needs a cap.** Shipping a year of raw sets every message is the failure mode;
+  `T3-10`'s aggregates are the fix.
+- Conversation history is new data and needs a table.
 
 ---
 
@@ -515,13 +567,14 @@ Two reorderings fall out of that, and both are the opposite of the complexity ra
 
 | # | Item | Why here | Gate |
 |---|------|----------|------|
-| 1 | `T3-8` visual bug | Trivial, and `T3-11` rebuilds this timeline — fix the markup before building on it | none |
+| 1 | `T3-8` visual bug | ✅ **SHIPPED** 2026-09-12 | none |
 | 2 | **`T3-14` schema redesign** | ✅ **SHIPPED** 2026-09-12 | `D10` ✅ |
 | 3 | `T3-11` variable cycles | ✅ **SHIPPED** 2026-09-12 | `T3-14` ✅ |
 | 4 | `T3-9` exercise swap | Small once sets are normalised; wanted during the 6-week cycle | `T3-14` |
 | 5 | `T3-10` metrics + aggregates | Needs normalised sets **and** real history to display | `T3-14`, `T3-11` |
-| 6 | `T3-12` long-term AI review | Reads `T3-10` aggregates, not raw logs | `T3-10` |
-| 7 | `T3-13` two-agent check-in | Needs a cycle to adjust and history to discuss | `T3-11`, `T3-10` |
+| 6 | `T3-13a` journal capture log | Small, and removes a live silent-write bug | `T3-14` |
+| 7 | `T3-13b` read-only coach | Needs history and notes; aggregates optional | `T3-13a` |
+| 8 | `T3-12` long-term AI review | Reads `T3-10` aggregates, not raw logs | `T3-10` |
 
 Steps 3 and 4 are what get the app usable again after the purge. Steps 5-7 are what make it good.
 
@@ -1150,3 +1203,29 @@ Suite is now **221 assertions across seven files**.
 **Still queued:** `T3-9` (swap), `T3-10` (metrics), `T3-12` (long-term review), `T3-13`
 (two-agent check-in). The Metrics and Check-in screens the user asked about are `T3-10` and
 `T3-13` - still untouched, and next after swap.
+
+### 2026-09-12 — T3-13 reshaped: the agent split was already solved by layout
+
+The two-agent Check-in is no longer the plan. Adjust Program, behind an icon on the Plan screen,
+already separates deliberate programme changes from everyday use — the user pushed back that it is
+well placed, and they are right. A second split inside the Journal would have rebuilt in software
+a boundary the layout already draws.
+
+**That reframing exposed a live bug.** The Journal's "Save & Recalibrate Plan" POSTs to
+`/api/recalibrate-plan` on every save, so the casual reflection screen has the same write power as
+the deliberate one and warns about it less. Same family as everything Tier 1 fixed, still in
+production. Removing it is now the first piece of `T3-13a`.
+
+**The design question "what is the Journal for" resolved to: capture, not conversation.** Writing a
+note has to cost nothing — eight seconds, in a gym, possibly offline — or it stops happening. If
+every note drew a coaching reply, note-taking would die while the coach still needed the notes.
+One tab, two separate actions: Save is free and silent, asking the coach is deliberate.
+
+**The observation worth keeping** is that notes have three consumers, and the long-term one
+(`T3-12`) is the most valuable and least obvious. Workout data records what was lifted; only notes
+record that it felt terrible doing it. That is the signal that makes a coach sound like it knows
+someone. It is an argument for cheap frequent capture over structured prompting.
+
+Split into `T3-13a` (capture log, small, includes the bug fix) and `T3-13b` (read-only coach).
+**`T3-13b` no longer depends on `T3-10`** — history and notes already exist; aggregates improve the
+coach rather than enabling it. It can move ahead of the Metrics rewrite if wanted sooner.

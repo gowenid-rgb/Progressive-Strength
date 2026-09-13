@@ -423,3 +423,24 @@ This is the concrete cost of having no staging environment — already noted und
 
 **Incidental:** `npm install` added `"peer": true` to the `pg` entry in `package-lock.json`.
 Lockfile metadata normalisation, unrelated to these fixes. Left in rather than hand-reverting.
+
+### 2026-09-12 — Server-side Tier 1 committed and pushed
+
+Two commits on `fix/tier-1-data-integrity`, pushed to origin:
+
+- `be3b301` docs: dev journal + Tier 1 plan
+- `180f21f` fix(server): T1-3 and T1-4
+
+**Why Railway "wasn't auto-deploying": there was nothing to deploy.** `origin/main` and local
+`main` were both still at `c12df02` — the same commit the zip was cut from — and zero commits had
+been made. Railway watches for new commits on the connected branch and was correctly doing
+nothing. Auto-deploy was never broken; it had never been given input.
+
+Pushing a *branch* should still not deploy, since Railway deploys from `main`. If the Deployments
+tab shows activity from this push, the service is configured to build all branches, which is worth
+knowing before the merge.
+
+Git push worked with no credential prompt — GCM already had GitHub credentials cached.
+
+**Unverified code is now on a branch, not in production.** `T1-4` still has never run against a
+database. Merging to `main` is what deploys it.

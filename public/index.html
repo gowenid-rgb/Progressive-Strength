@@ -128,7 +128,7 @@
 
         <!-- SCREEN 2: WORKOUT PLAN -->
         <div id="screen-plan" class="screen flex-col h-full overflow-y-auto pb-24">
-            <div class="px-8 py-6 sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-borderSubtle flex justify-between items-end">
+            <div class="px-8 py-6 sticky top-0 z-20 bg-background/80 backdrop-blur-md border-b border-borderSubtle flex justify-between items-end">
                 <div>
                     <div class="flex items-center space-x-3 mb-1">
                         <p id="plan-week" class="text-textMuted text-xs font-semibold uppercase tracking-widest">Week 1</p>
@@ -143,7 +143,12 @@
             </div>
 
             <!-- Macro-cycle Timeline -->
-            <div class="px-6 pt-4 pb-2">
+            <!-- relative+z-0 creates a stacking context so the W1..Wn nodes stay below the
+                 sticky header. The nodes carry z-10 to sit above their connector line, and
+                 renderPlan() rewrites their className on every render -- so the containment
+                 has to live here on the wrapper, not on the nodes, or it regresses the
+                 moment a plan loads. -->
+            <div class="px-6 pt-4 pb-2 relative z-0">
                 <div class="flex items-center justify-between relative">
                     <div class="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-surface border border-borderSubtle z-0"></div>
                     

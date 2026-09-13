@@ -314,7 +314,7 @@ T3-3   schema foundation   <-- the free-migration window
 
 ---
 
-## 1. T3-8 — Cycle timeline overlaps the header when scrolling · `OPEN`
+## 1. T3-8 — Cycle timeline overlaps the header when scrolling · `SHIPPED` 2026-09-12
 
 **Complexity: trivial.** One CSS change, plus one trap.
 
@@ -631,10 +631,10 @@ Cross-cutting things to settle before they force rework.
 | D3 | Is a "cycle" N distinct weekly plans, or one plan progressively loaded? | Blocks `T3-11`, shapes `T3-14` | ✅ **Decided 2026-09-12** — N distinct plans, generated a week ahead |
 | D4 | Keep plan history, or only ever the current plan? | Schema decision; shapes `T3-14` | ✅ **Settled 2026-09-12** — keep, forced by `T3-12` |
 | D5 | Does the clone live inside OneDrive or outside it? | Blocks `T1-0` | ✅ **Decided 2026-09-12** — outside |
-| D6 | Does an exercise swap persist beyond the session? | `T3-9` | **Unanswered** |
+| D6 | Does an exercise swap persist beyond the session? | `T3-9` | ✅ **Decided 2026-09-12** — user picks at swap time: this session / this and future |
 | D7 | Swap alternatives: static map or AI? | `T3-9` | ✅ **Decided 2026-09-12** — static map |
-| D8 | Chart: hand-rolled SVG or a library? | `T3-10` | **Unanswered** |
-| D9 | Does the adjustment agent apply changes directly? | `T3-13` | **Unanswered** — recommend preview+confirm |
+| D8 | Chart: hand-rolled SVG or a library? | `T3-10` | ✅ **Decided 2026-09-12** — hand-rolled SVG (delegated) |
+| D9 | Does the adjustment agent apply changes directly? | `T3-13` | ✅ **Decided 2026-09-12** — yes, auto-apply for now; revisit after dogfooding |
 | D10 | Take the schema foundation early, while purging is free? | `T3-10`, `T3-11` | ✅ **Decided 2026-09-12** — yes, purge and redesign |
 
 ### D2 — resolved
@@ -1018,3 +1018,45 @@ a convenience; the raw column is the record.
 `CREATE TABLE IF NOT EXISTS` limitation exactly once. Without a real mechanism the same wall
 arrives at `T3-13`, with real data behind it by then. That is the part of `T3-14` that outlasts
 `T3-14`.
+
+### 2026-09-12 — D6, D8, D9 resolved; T3-8 shipped
+
+**`D6` — swap scope.** Decided: the user picks at swap time, **This session only** or **This and
+future**, the latter replacing that movement everywhere it appears in the remaining plan. Better
+than the opt-in version originally proposed, because it puts the consequence in front of the user
+at the moment they choose rather than hiding it behind a checkbox. Implication for `T3-14`:
+`workout_sets.swapped_from` records what happened in a session, but a persistent swap also has to
+rewrite the stored `week_plans`, so `T3-9` touches plan data and not just logging.
+
+**`D8` — charting. Delegated, decided: hand-rolled SVG.** Reasons, in order of weight:
+- The CSP allows scripts from a short CDN allowlist only, so a library is another external
+  dependency on a page that is otherwise self-contained.
+- This is a PWA that should work offline. A CDN script is a network dependency at load; the
+  service worker can cache it, but that is one more thing to get wrong.
+- The app has a specific dark aesthetic driven by a custom Tailwind palette. Theming a charting
+  library to match is usually more work than drawing the chart.
+- Scope is small: one line chart plus stat cards. That is roughly 60 lines of SVG against a
+  ~200KB dependency.
+
+Honest tradeoff: hand-rolling means owning axis scaling, date bucketing and responsive behaviour.
+**Revisit if** we later want zoom/pan, several chart types, or interactive tooltips across
+series — at that point a library earns its weight.
+
+**`D9` — adjustment agent applies changes automatically.** User's call, on the basis that they
+are the only user and will flag it if it bites. Recorded as decided, not as an open risk.
+
+Worth noting because it costs almost nothing: `D4` already keeps `week_plans` history, so an
+adjustment can be made **undoable** rather than **preventable**. If auto-apply does become a
+problem, the fix is a restore-previous-version button rather than a redesign of the interaction.
+The safety property is reachable later without revisiting the decision now.
+
+**Two `T3-14` details settled** (small, taken as routine calls — say if either is wrong):
+- **Units:** per-set `weight_unit` with a display preference, not conversion on write. Converting
+  loses fidelity, and nobody thinks in converted numbers.
+- **`workouts.notes`:** included. Cheap now, awkward to add later.
+
+**`T3-8` shipped.** The timeline wrapper gets `relative z-0`, creating a stacking context that
+contains the W-nodes below the sticky header, and the header moves to `z-20` so the relationship
+is explicit. The containment deliberately lives on the wrapper: `renderPlan()` rewrites each
+node's `className` — including `z-10` — on every render, so a fix applied to the nodes would
+survive exactly until the first plan loaded.

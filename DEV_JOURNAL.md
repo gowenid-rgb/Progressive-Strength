@@ -48,8 +48,9 @@ Things about this codebase that will bite us repeatedly. Read before planning an
 - **There is no migration mechanism.** `db.initDB()` uses `CREATE TABLE IF NOT EXISTS`, which will
   *not* add columns to an already-created table. Any schema change (`T3-2`, `T3-3`) needs a real
   `ALTER TABLE` path, not an edit to `initDB`.
-- **No test framework, no CI.** Every change is verified by hand. Manual test scripts belong in
-  the plan for each fix.
+- ~~**No test framework, no CI.**~~ **Resolved 2026-09-12.** `npm test` runs 59 assertions with
+  no external services: client logic via `node:vm` with a stubbed DOM, database logic against
+  real PostgreSQL via PGlite (WASM). Add regression cases here for every future fix.
 - **No staging environment.** Railway deploys straight to the thing people use.
 - **`user_data` is two JSON blobs.** Every save rewrites the entire plan and entire history.
   There is no partial update and no conflict detection.
@@ -66,10 +67,10 @@ Critical. Silent data corruption and an auth weakness. Detailed plan in `TIER1_P
 | ID | Issue | Status |
 |----|-------|--------|
 | T1-0 | Working copy is not a git clone — no path to deploy | `SHIPPED` (2026-09-12) |
-| T1-1 | Session lifecycle wipes history and leaks data between accounts | `PLANNED` |
-| T1-2 | Workout logger records sets the user never performed | `PLANNED` |
-| T1-3 | `JWT_SECRET` falls back to a hardcoded public value | `IN PROGRESS` — code done, verified |
-| T1-4 | `user_data` save is `UPDATE`, silently no-ops when row is missing | `IN PROGRESS` — code done, **unverified** |
+| T1-1 | Session lifecycle wipes history and leaks data between accounts | `SHIPPED` to branch, tested |
+| T1-2 | Workout logger records sets the user never performed | `SHIPPED` to branch, tested |
+| T1-3 | `JWT_SECRET` falls back to a hardcoded public value | `SHIPPED` to branch, tested |
+| T1-4 | `user_data` save is `UPDATE`, silently no-ops when row is missing | `SHIPPED` to branch, **verified vs real Postgres** |
 | T1-5 | Production credentials exposed in a screenshot — rotate all three | `OPEN` |
 
 ---
@@ -444,3 +445,37 @@ Git push worked with no credential prompt — GCM already had GitHub credentials
 
 **Unverified code is now on a branch, not in production.** `T1-4` still has never run against a
 database. Merging to `main` is what deploys it.
+
+### 2026-09-12 — All Tier 1 code complete and tested; a near-miss caught in the process
+
+`npm test` = **59 assertions, all passing.** `T1-4` is no longer unverified: PGlite runs real
+PostgreSQL 18 in-process (WASM, no Docker), and the tests drive the actual `db.js` with `pg`
+swapped for a PGlite-backed pool. Schema and upsert SQL are read out of the source files, so the
+tests cannot drift from the implementation.
+
+Assertions deliberately read `result.rowCount` — the property `server.js` actually checks — after
+confirming PGlite exposes both that and `affectedRows`. An earlier draft accepted either, which
+would have masked a shape mismatch between PGlite and node-postgres.
+
+**The important find: the `T1-1` fix was itself a rollout hazard.**
+
+The original bug wiped the server journal on new-device login. But the old boot sequence also
+re-uploaded whatever the *first* device still held — so that device frequently kept the only
+surviving copy. Hydrating strictly from the server, which is correct in general, would have
+cleared that copy on first load after deploy and completed the data loss for exactly the users
+the bug had already hurt.
+
+`hydrateFromServer()` now refuses to overwrite a populated local journal with an empty server
+one, and boot pushes the stranded copy back up instead — the single case where boot writes to
+the server. It cannot leak across accounts, because `clearLocalSession()` runs at every session
+boundary, leaving nothing to rescue when a different user signs in. Asserted explicitly.
+
+**Worth generalising:** a fix that changes which copy of the data is authoritative needs to be
+assessed against the state the *old bug* left behind, not just against a clean system. Apply this
+to `T3-3` when the journal is normalised.
+
+**Branch state:** `fix/tier-1-data-integrity` is 5 commits ahead of `main`, all pushed. Nothing
+deployed. Merging to `main` is what ships it.
+
+**Still outstanding and only doable in the Railway console:** rotate `GEMINI_API_KEY` (`T1-5`),
+and confirm a database backup exists before the merge.

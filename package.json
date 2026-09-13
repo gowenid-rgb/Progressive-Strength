@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/tier1.test.js && node test/db.test.js && node test/ratelimit.test.js"
+    "test": "node test/tier1.test.js && node test/db.test.js && node test/ratelimit.test.js && node test/aiclient.test.js"
   },
   "dependencies": {
     "@google/genai": "^2.21.0",

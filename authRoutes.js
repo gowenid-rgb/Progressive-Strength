@@ -17,17 +17,15 @@ router.post('/register', async (req, res) => {
         // reason to hold a pool connection for it.
         const hash = await bcrypt.hash(password, 10);
 
-        // Both inserts must succeed together. Previously a failure on the second left a
-        // users row with no user_data row, and every save that account ever made would
-        // silently write nothing.
-        const user = await db.withTransaction(async (client) => {
-            const inserted = await client.query(
-                'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email',
-                [email, hash]
-            );
-            await client.query('INSERT INTO user_data (user_id) VALUES ($1)', [inserted.rows[0].id]);
-            return inserted.rows[0];
-        });
+        // Registration creates only the user. Under the Phase 2 schema there is no companion
+        // row to create alongside it -- a cycle is created when the user first generates a
+        // plan -- so the two-insert transaction this replaced is no longer needed. That
+        // pairing was what made the old silent-save-failure bug reachable in the first place.
+        const inserted = await db.query(
+            'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email',
+            [email, hash]
+        );
+        const user = inserted.rows[0];
 
         const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
         res.status(201).json({ token, user });

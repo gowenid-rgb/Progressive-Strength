@@ -352,6 +352,12 @@
             }
 
             localStorage.setItem('workoutJournal', JSON.stringify(serverJournal));
+
+            // Check-in reflections are server-side now (T3-2), so they hydrate like everything
+            // else instead of living only on whichever device typed them.
+            if (Array.isArray(data.journalEntries)) {
+                localStorage.setItem('journalEntries', JSON.stringify(data.journalEntries));
+            }
             return 0;
         }
 
@@ -386,9 +392,14 @@
 
                 // The only circumstance in which boot writes to the server: this device holds
                 // history the server lost. Push it back up before anything else can overwrite it.
+                //
+                // Each workout is appended individually -- syncData() sends only the plan now,
+                // so calling it here would restore nothing. The rescue only fires when the
+                // server's history is empty, so every local workout is genuinely missing and
+                // re-posting cannot duplicate anything.
                 if (rescued > 0) {
                     console.warn('Restoring ' + rescued + ' workout(s) the server was missing.');
-                    await syncData();
+                    await pushStrandedWorkouts();
                 }
 
                 if (currentWorkoutPlan) {
@@ -437,19 +448,57 @@
             }
         }
         
+        // Saves the PLAN only. Workout history is append-only via POST /api/workouts, so
+        // there is no longer any request that can overwrite past sessions wholesale -- the
+        // structural fix for T1-1 and T3-3 rather than a guard against them.
         async function syncData() {
             const token = localStorage.getItem('token');
             if(!token) return;
             const currentPlan = localStorage.getItem('currentWorkoutPlan');
-            const workoutJournal = localStorage.getItem('workoutJournal');
-            await fetch('/api/user/data', {
+            const res = await fetch('/api/user/data', {
                 method: 'POST',
                 headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    currentPlan: currentPlan ? JSON.parse(currentPlan) : null,
-                    workoutJournal: workoutJournal ? JSON.parse(workoutJournal) : []
-                })
+                body: JSON.stringify({ currentPlan: currentPlan ? JSON.parse(currentPlan) : null })
             });
+            if (!res.ok) console.error('Plan save failed:', res.status);
+            return res.ok;
+        }
+
+        async function postWorkout(workoutLog) {
+            const token = localStorage.getItem('token');
+            if(!token) return false;
+            const res = await fetch('/api/workouts', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                body: JSON.stringify(workoutLog)
+            });
+            if (!res.ok) console.error('Workout save failed:', res.status);
+            return res.ok;
+        }
+
+        // Re-uploads workouts this device holds but the server does not. Failures are
+        // logged and skipped rather than aborting: restoring four of five sessions beats
+        // restoring none, and the rest will be retried on the next load.
+        async function pushStrandedWorkouts() {
+            const local = readLocalJournal();
+            let restored = 0;
+            for (const workout of local) {
+                if (await postWorkout(workout)) restored++;
+            }
+            console.warn('Restored ' + restored + ' of ' + local.length + ' workout(s).');
+            return restored;
+        }
+
+        async function postJournalEntry(energy, intentions) {
+            const token = localStorage.getItem('token');
+            if(!token) return false;
+            const res = await fetch('/api/journal', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ energy, intentions })
+            });
+            if (!res.ok) console.error('Journal save failed:', res.status);
+            return res.ok;
         }
 
         function nav(screenId, navBtnId = null) {
@@ -831,6 +880,11 @@
                 exercises: Object.values(byExercise)
             };
 
+            // Append to the server first. If it fails the local copy still holds the session,
+            // and the boot-time rescue rule will push it up on the next load rather than
+            // losing it.
+            const saved = await postWorkout(workoutLog);
+
             const journal = JSON.parse(localStorage.getItem('workoutJournal') || '[]');
             journal.push(workoutLog);
             localStorage.setItem('workoutJournal', JSON.stringify(journal));
@@ -838,6 +892,10 @@
             day.completed = true;
             localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan));
             await syncData();
+
+            if (!saved) {
+                alert('Workout saved on this device, but could not reach the server. It will sync next time you open the app.');
+            }
 
             alert('Workout saved - ' + checked.length + ' ' + (checked.length === 1 ? 'set' : 'sets') + ' logged.');
             renderPlan(currentWorkoutPlan);
@@ -968,9 +1026,12 @@
 
             const combinedFeedback = `Energy/Pains: ${energy}. Intentions: ${intentions}.`;
 
-            // Save to localStorage
+            // Persist server-side (T3-2) as well as locally, so reflections survive a new
+            // device and actually reach the plan generator that was built to read them.
+            await postJournalEntry(energy, intentions);
+
             let savedEntries = JSON.parse(localStorage.getItem('journalEntries') || '[]');
-            savedEntries.push({ date: new Date().toISOString(), entry: combinedFeedback });
+            savedEntries.push({ date: new Date().toISOString(), entry: combinedFeedback, energy, intentions });
             localStorage.setItem('journalEntries', JSON.stringify(savedEntries));
 
             const btn = document.getElementById('btn-submit-journal');

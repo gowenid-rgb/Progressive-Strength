@@ -119,9 +119,11 @@ async function testSessionLifecycle() {
     );
     await t.boot();
     check('stranded history is NOT wiped by an empty server', JSON.parse(t.store.get('workoutJournal')).length, 3);
-    const rescuePosts = t.calls.filter(c => c.method === 'POST' && c.url === '/api/user/data');
-    check('stranded history is pushed back to the server', rescuePosts.length, 1);
-    check('the push carries all 3 workouts', JSON.parse(rescuePosts[0].body).workoutJournal.length, 3);
+    // Each stranded workout is appended individually via /api/workouts. syncData() sends
+    // only the plan now, so a rescue that called it would silently restore nothing.
+    const rescuePosts = t.calls.filter(c => c.method === 'POST' && c.url === '/api/workouts');
+    check('stranded history is pushed back to the server', rescuePosts.length, 3);
+    check('each push carries one workout', JSON.parse(rescuePosts[0].body).date, 'w1');
 
     // Normal case: server has history too, so the server wins and no push happens.
     t = sessionHarness(

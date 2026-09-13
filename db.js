@@ -5,25 +5,17 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
 });
 
+const { migrate } = require('./migrate');
+
+// Schema is owned by numbered files in migrations/, applied in order and recorded in
+// schema_migrations. The previous CREATE TABLE IF NOT EXISTS approach could create tables
+// but never alter them, so every later schema change was blocked unless data was discarded.
 const initDB = async () => {
     try {
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS user_data (
-                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-                current_plan JSONB,
-                workout_journal JSONB DEFAULT '[]'::jsonb
-            );
-        `);
-        console.log("Database initialized successfully.");
+        await migrate(module.exports);
     } catch (err) {
-        console.error("Failed to initialize database:", err);
+        console.error('Migration failed:', err);
+        throw err;
     }
 };
 
@@ -45,8 +37,21 @@ const withTransaction = async (fn) => {
     }
 };
 
+// Borrows a single pooled connection for the caller. Needed for anything that must run
+// several statements on the SAME connection -- session-scoped advisory locks, for instance,
+// which are released by the connection that took them.
+const withClient = async (fn) => {
+    const client = await pool.connect();
+    try {
+        return await fn(client);
+    } finally {
+        client.release();
+    }
+};
+
 module.exports = {
   query: (text, params) => pool.query(text, params),
   withTransaction,
+  withClient,
   initDB
 };

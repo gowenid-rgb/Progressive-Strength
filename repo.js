@@ -1,0 +1,243 @@
+// Data access for the Phase 2 schema.
+//
+// Everything that touches cycles, plans, workouts and journal entries goes through here,
+// so the shape of the database is not spread across route handlers.
+//
+// The important behavioural change from the old model: workouts are APPEND-ONLY. Finishing
+// a session inserts rows; nothing rewrites history. The previous design sent the entire
+// journal blob on every save, so any stale client could overwrite everything (T3-3), and
+// did (T1-1).
+const db = require('./db');
+const { parseWeight, parseReps } = require('./units');
+
+/* ------------------------------------------------------------------ cycles */
+
+async function getActiveCycle(userId) {
+    const r = await db.query(
+        `SELECT * FROM cycles WHERE user_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
+        [userId]
+    );
+    return r.rows[0] || null;
+}
+
+// Only one cycle may be active per user (enforced by a partial unique index), so retiring
+// the previous one and creating the new one must happen together or not at all.
+async function startCycle(userId, opts = {}) {
+    return db.withTransaction(async client => {
+        await client.query(
+            `UPDATE cycles SET status = 'abandoned', completed_at = now()
+             WHERE user_id = $1 AND status = 'active'`,
+            [userId]
+        );
+        const r = await client.query(
+            `INSERT INTO cycles
+                (user_id, name, goal, experience_level, equipment, training_days,
+                 extra_details, total_weeks, current_week, status)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,'active')
+             RETURNING *`,
+            [
+                userId,
+                opts.name || null,
+                opts.goal || null,
+                opts.experienceLevel || null,
+                opts.equipment || null,
+                opts.trainingDays || null,
+                opts.extraDetails || null,
+                opts.totalWeeks || 1
+            ]
+        );
+        return r.rows[0];
+    });
+}
+
+async function endActiveCycle(userId, status = 'abandoned') {
+    const r = await db.query(
+        `UPDATE cycles SET status = $2, completed_at = now()
+         WHERE user_id = $1 AND status = 'active' RETURNING id`,
+        [userId, status]
+    );
+    return r.rowCount;
+}
+
+/* -------------------------------------------------------------- week plans */
+
+async function saveWeekPlan(cycleId, weekNumber, plan, opts = {}) {
+    const r = await db.query(
+        `INSERT INTO week_plans (cycle_id, week_number, phase, plan, status)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (cycle_id, week_number) DO UPDATE
+            SET plan = EXCLUDED.plan,
+                phase = EXCLUDED.phase,
+                status = EXCLUDED.status,
+                generated_at = now()
+         RETURNING *`,
+        [cycleId, weekNumber, opts.phase || null, JSON.stringify(plan), opts.status || 'active']
+    );
+    return r.rows[0];
+}
+
+async function getWeekPlan(cycleId, weekNumber) {
+    const r = await db.query(
+        'SELECT * FROM week_plans WHERE cycle_id = $1 AND week_number = $2',
+        [cycleId, weekNumber]
+    );
+    return r.rows[0] || null;
+}
+
+/* ---------------------------------------------------------------- workouts */
+
+/**
+ * Appends one completed session and its sets.
+ *
+ * `exercises` is the shape the client already builds in finishWorkout():
+ *   [{ name, sets: [{ set, weight, reps, swappedFrom? }] }]
+ *
+ * Weight and reps arrive as free text and are stored both parsed and raw — see units.js.
+ * The whole insert is one transaction, so a session can never land without its sets.
+ */
+async function appendWorkout(userId, workout) {
+    const exercises = Array.isArray(workout.exercises) ? workout.exercises : [];
+
+    return db.withTransaction(async client => {
+        const w = await client.query(
+            `INSERT INTO workouts
+                (user_id, cycle_id, week_number, day_index, day_name, plan_name,
+                 notes, started_at, finished_at, duration_seconds)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9, now()),$10)
+             RETURNING *`,
+            [
+                userId,
+                workout.cycleId || null,
+                workout.weekNumber || null,
+                workout.dayIndex === undefined ? null : workout.dayIndex,
+                workout.dayName || null,
+                workout.planName || null,
+                workout.notes || null,
+                workout.startedAt || null,
+                workout.date || null,
+                workout.durationSeconds || null
+            ]
+        );
+        const saved = w.rows[0];
+
+        for (let i = 0; i < exercises.length; i++) {
+            const ex = exercises[i];
+            if (!ex || !ex.name) continue;
+            const sets = Array.isArray(ex.sets) ? ex.sets : [];
+
+            for (let j = 0; j < sets.length; j++) {
+                const s = sets[j] || {};
+                const weight = parseWeight(s.weight);
+                const reps = parseReps(s.reps);
+
+                await client.query(
+                    `INSERT INTO workout_sets
+                        (workout_id, exercise_name, exercise_order, set_number,
+                         weight_value, weight_unit, is_bodyweight, reps_value,
+                         weight_raw, reps_raw, swapped_from)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                    [
+                        saved.id,
+                        ex.name,
+                        i,
+                        Number(s.set) || j + 1,
+                        weight.value,
+                        weight.unit,
+                        weight.isBodyweight,
+                        reps.value,
+                        weight.raw,
+                        reps.raw,
+                        s.swappedFrom || ex.swappedFrom || null
+                    ]
+                );
+            }
+        }
+
+        return saved;
+    });
+}
+
+/**
+ * Recent workouts in the journal shape the client and the AI prompts already expect:
+ *   [{ date, planName, dayName, durationSeconds, exercises: [{ name, sets: [...] }] }]
+ *
+ * Two queries rather than one join, then grouped in JS. At this scale the difference is
+ * irrelevant and the grouping stays legible.
+ */
+async function getWorkoutHistory(userId, limit = 50) {
+    const ws = await db.query(
+        `SELECT * FROM workouts WHERE user_id = $1 ORDER BY finished_at DESC LIMIT $2`,
+        [userId, limit]
+    );
+    if (ws.rows.length === 0) return [];
+
+    const ids = ws.rows.map(r => r.id);
+    const ss = await db.query(
+        `SELECT * FROM workout_sets WHERE workout_id = ANY($1::int[])
+         ORDER BY workout_id, exercise_order, set_number`,
+        [ids]
+    );
+
+    const byWorkout = new Map(ids.map(id => [id, new Map()]));
+    for (const s of ss.rows) {
+        const exercises = byWorkout.get(s.workout_id);
+        if (!exercises.has(s.exercise_name)) {
+            exercises.set(s.exercise_name, { name: s.exercise_name, swappedFrom: s.swapped_from || undefined, sets: [] });
+        }
+        exercises.get(s.exercise_name).sets.push({
+            set: s.set_number,
+            // Raw is what the user typed; that is what the UI should echo back to them.
+            weight: s.weight_raw,
+            reps: s.reps_raw,
+            weightValue: s.weight_value === null ? null : Number(s.weight_value),
+            weightUnit: s.weight_unit,
+            isBodyweight: s.is_bodyweight,
+            repsValue: s.reps_value
+        });
+    }
+
+    // Oldest first: the client's "Prev" lookup walks the array backwards expecting that.
+    return ws.rows.reverse().map(w => ({
+        id: w.id,
+        date: w.finished_at,
+        planName: w.plan_name,
+        dayName: w.day_name,
+        weekNumber: w.week_number,
+        durationSeconds: w.duration_seconds,
+        exercises: Array.from(byWorkout.get(w.id).values())
+    }));
+}
+
+/* ---------------------------------------------------------- journal entries */
+
+async function appendJournalEntry(userId, entry) {
+    const r = await db.query(
+        `INSERT INTO journal_entries (user_id, cycle_id, week_number, energy, intentions)
+         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [userId, entry.cycleId || null, entry.weekNumber || null, entry.energy || null, entry.intentions || null]
+    );
+    return r.rows[0];
+}
+
+async function getJournalEntries(userId, limit = 20) {
+    const r = await db.query(
+        `SELECT * FROM journal_entries WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`,
+        [userId, limit]
+    );
+    return r.rows.reverse().map(e => ({
+        date: e.created_at,
+        weekNumber: e.week_number,
+        energy: e.energy,
+        intentions: e.intentions,
+        // The prompts consume a single combined string; keep that shape here so the route
+        // handlers do not each reinvent it.
+        entry: `Energy/Pains: ${e.energy || ''}. Intentions: ${e.intentions || ''}.`
+    }));
+}
+
+module.exports = {
+    getActiveCycle, startCycle, endActiveCycle,
+    saveWeekPlan, getWeekPlan,
+    appendWorkout, getWorkoutHistory,
+    appendJournalEntry, getJournalEntries
+};

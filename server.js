@@ -3,7 +3,9 @@
 require('./config');
 const express = require('express');
 const path = require('path');
-const { GoogleGenAI } = require('@google/genai');
+const {
+    generateJSON, validatePlan, validateRecap, PLAN_SCHEMA, RECAP_SCHEMA
+} = require('./aiClient');
 const db = require('./db');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
@@ -19,24 +21,8 @@ if (process.env.DATABASE_URL) {
     console.warn("No DATABASE_URL provided. Database will not initialize.");
 }
 
-// Initialize Gemini (New SDK)
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-
-// The SDK returns the concatenated model text on `output_text` (snake_case). Earlier code
-// read `outputText || output_text || text`; the first and third never exist on this type, so
-// a genuine SDK change would have silently produced undefined and thrown deep inside
-// JSON.parse. Read the one real field and fail with a clear message instead.
-function readModelText(response) {
-    const text = response && response.output_text;
-    if (typeof text !== 'string' || text.trim() === '') {
-        console.error('Unexpected model response shape:', Object.keys(response || {}));
-        throw new Error('Model returned no text output');
-    }
-    return text;
-}
 
 // Authentication Routes
 app.use('/api/auth', authLimiter, authRoutes);
@@ -114,7 +100,7 @@ ${journalEntries ? JSON.stringify(journalEntries) : 'None'}
 Create a highly effective 1-week workout plan tailored to this user. 
 Smart Programming Rules:
 1. Warmups and mobility work should NOT have a suggested weight, and should have appropriate reps (e.g. 15-20 or time-based).
-2. For main working sets, if the user has past performance history for a movement, suggest a challenging but realistic weight. If it's a new movement, leave suggestedWeight blank or null.
+2. For main working sets, if the user has past performance history for a movement, suggest a challenging but realistic weight. If it's a new movement, omit suggestedWeight entirely.
 3. Incorporate any feedback from their journal. If they mention an injury or fatigue, adjust the intensity, remove offending exercises, or program a deload week.
 
 IMPORTANT: You MUST return the plan STRICTLY as a raw JSON object. Do not include markdown formatting, do not include \`\`\`json blocks. Just the raw JSON object.
@@ -131,27 +117,20 @@ Schema requirement:
           "name": "String",
           "sets": 3,
           "reps": "String",
-          "suggestedWeight": "String (e.g., '135 lbs', or null if warmup/new)"
+          "suggestedWeight": "String (e.g., '135 lbs'). OMIT this field entirely for warmups and new movements - do not send null."
         }
       ]
     }
   ]
 }`;
 
-        const response = await ai.interactions.create({
-            model: 'gemini-3.8-flash',
-            input: prompt
+        const plan = await generateJSON({
+            prompt,
+            schema: PLAN_SCHEMA,
+            validate: validatePlan,
+            label: 'generate-plan'
         });
 
-        let textResult = readModelText(response);
-        
-        // Strip markdown if the AI accidentally includes it
-        if (textResult.startsWith('\`\`\`json')) {
-            textResult = textResult.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '');
-        }
-
-        const plan = JSON.parse(textResult.trim());
-        
         res.json(plan);
 
     } catch (error) {
@@ -183,7 +162,7 @@ ${workoutHistory ? JSON.stringify(workoutHistory) : 'None'}
 Adjust the current plan according to the feedback while maintaining the exact same JSON schema. 
 Smart Programming Rules:
 1. Warmups and mobility work should NOT have a suggested weight, and should have appropriate reps.
-2. For main working sets, if the user has past performance history for a movement, suggest a challenging but realistic weight based on their history. If it's a new movement, leave suggestedWeight blank or null.
+2. For main working sets, if the user has past performance history for a movement, suggest a challenging but realistic weight based on their history. If it's a new movement, omit suggestedWeight entirely.
 3. Incorporate the feedback heavily to modify exercises, intensities, or phase.
 
 IMPORTANT: You MUST return the plan STRICTLY as a raw JSON object. Do not include markdown formatting, do not include \`\`\`json blocks. Just the raw JSON object.
@@ -200,27 +179,20 @@ Schema requirement:
           "name": "String",
           "sets": 3,
           "reps": "String",
-          "suggestedWeight": "String (e.g., '135 lbs', or null if warmup/new)"
+          "suggestedWeight": "String (e.g., '135 lbs'). OMIT this field entirely for warmups and new movements - do not send null."
         }
       ]
     }
   ]
 }`;
 
-        const response = await ai.interactions.create({
-            model: 'gemini-3.8-flash',
-            input: prompt
+        const updatedPlan = await generateJSON({
+            prompt,
+            schema: PLAN_SCHEMA,
+            validate: validatePlan,
+            label: 'recalibrate-plan'
         });
 
-        let textResult = readModelText(response);
-        
-        // Strip markdown if the AI accidentally includes it
-        if (textResult.startsWith('\`\`\`json')) {
-            textResult = textResult.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '');
-        }
-
-        const updatedPlan = JSON.parse(textResult.trim());
-        
         res.json(updatedPlan);
 
     } catch (error) {
@@ -256,18 +228,13 @@ Schema requirement:
   ]
 }`;
 
-        const response = await ai.interactions.create({
-            model: 'gemini-3.8-flash',
-            input: prompt
+        const recap = await generateJSON({
+            prompt,
+            schema: RECAP_SCHEMA,
+            validate: validateRecap,
+            label: 'generate-recap'
         });
 
-        let textResult = readModelText(response);
-        
-        if (textResult.startsWith('\`\`\`json')) {
-            textResult = textResult.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '');
-        }
-
-        const recap = JSON.parse(textResult.trim());
         res.json(recap);
 
     } catch (error) {

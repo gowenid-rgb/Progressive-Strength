@@ -71,13 +71,13 @@ Critical. Silent data corruption and an auth weakness. Detailed plan in `TIER1_P
 | T1-2 | Workout logger records sets the user never performed | `SHIPPED` to branch, tested |
 | T1-3 | `JWT_SECRET` falls back to a hardcoded public value | `SHIPPED` to branch, tested |
 | T1-4 | `user_data` save is `UPDATE`, silently no-ops when row is missing | `SHIPPED` to branch, **verified vs real Postgres** |
-| T1-5 | Production credentials exposed in a screenshot — rotate all three | `OPEN` |
+| T1-5 | Production credentials exposed in a screenshot — rotate all three | `GEMINI key rotated` 2026-09-12; JWT/DB pending |
 
 ---
 
 ## Open Issues — Tier 2 (reliability & cost)
 
-### T2-1 — Fragile AI JSON parsing, no validation or retry · `OPEN`
+### T2-1 — Fragile AI JSON parsing, no validation or retry · `SHIPPED to branch` 2026-09-12
 
 **Where:** `server.js` — all three AI endpoints (~L108, ~L185, ~L232)
 
@@ -560,3 +560,40 @@ lock a real account out of plan generation for 15 minutes. They are covered by
 `test/ratelimit.test.js` against a real in-process server instead.
 
 **Rollback target for this deploy: `bf46038`** (Tier 1).
+
+### 2026-09-12 — T1-5 Gemini key rotated; T2-1 implemented with schema enforcement
+
+**`GEMINI_API_KEY` rotated** (confirmed by the user; not independently verified from here, since
+verifying would have meant putting the key into this transcript). `JWT_SECRET` and `DATABASE_URL`
+from the same screenshot are **still un-rotated** — lower urgency, not zero.
+
+**`T2-1` done, using the approach found in the SDK types rather than the one originally planned.**
+Three layers, outermost first:
+
+1. `response_format: { type: 'text', mime_type: 'application/json', schema }` asks the API to
+   guarantee conforming JSON — removing the problem at source instead of cleaning up after it.
+2. `extractJsonObject()` finds the first balanced `{...}` by brace counting, for when layer 1 is
+   unavailable or ignored. String-aware, so a `}` inside an exercise name like `Squat {3x5}`
+   does not end the object early. Handles fences, prose preambles and trailing commentary
+   without special-casing any of them — the old `startsWith('\`\`\`json')` check was defeated by
+   a single leading newline.
+3. A validator rejects responses that parse but are useless (`days: []`, an exercise with no
+   name). The old code had no equivalent and would persist such a thing as the active plan.
+   One retry follows any failure in layers 2 or 3.
+
+**The `response_format` field is unverified against the live API** — confirming it needs a real
+call, which needs a key. So it degrades: if the API rejects the request as a shape error (400 /
+unknown field), the client logs it, disables the field for the process lifetime, and retries
+without it. Worst case we are exactly as good as before; best case the failure class disappears.
+Watch the deploy logs for `response_format rejected by the API` to find out which.
+
+Prompts now say to **omit** `suggestedWeight` rather than send `null`, because `null` does not
+satisfy `type: string` in the schema. The client already treats a missing value as bodyweight.
+
+Extracted `aiClient.js` so this is testable without a key: `__setClientForTests()` injects a stub.
+`test/aiclient.test.js` adds 32 assertions covering every malformed response shape that used to
+produce a 500, plus the retry paths and the fallback. Suite is now **108 assertions across four
+files**.
+
+**Riskiest deploy so far** — it is the first change to the actual generation path. Generating a
+plan in the live app is the real test.

@@ -661,6 +661,120 @@ spending it on a mechanism rather than only on tables is what stops this recurri
 - Does `workouts` need a `notes` field for per-session comments? Cheap now, awkward later.
 
 
+---
+
+# Phase 3 — It is a program generator, not a workout generator
+
+Added 2026-09-20, after the user corrected the founding premise. This is the most important
+entry in this document: several things built so far are shaped by the wrong model.
+
+## The premise
+
+> It is not a "workout generator", it is a **program generator**. It generates a full cycle of
+> workouts over X weeks, each one focusing on progression. It knows what you did last week, the
+> week before that. It knows when to load and deload, and what the next cycle should look like.
+
+## What is actually built, and why it falls short
+
+Every week is produced by an independent `/api/generate-plan` call. It receives the goal,
+equipment, workout history, journal entries and a phase label — and improvises a week.
+
+Nothing carries the **design** of the programme from one week to the next. Week 4 is not
+week 4 of anything; it is a fresh week that happens to be labelled "Peak". That is a workout
+generator with a counter attached.
+
+Three symptoms already seen, all the same root cause:
+
+1. **Movement names drifted** between weeks, splitting one climbing lift into several
+   one-session movements so nothing charted. Patched by instructing the model to reuse names —
+   **a prompt-level workaround for a structural problem.** If movements are chosen once for the
+   whole programme, drift is not possible.
+2. **Deloads were a hope, not a plan.** The prompt says "this is a deload week" and trusts the
+   model to have left something to deload from.
+3. **Progression cannot be explained.** Nobody can say *why* the weight went up, because the
+   reason lives in a prompt that has already been discarded.
+
+## The shape it should be
+
+A **programme** is designed once per cycle and stored. A **week** is rendered from it.
+
+```
+PROGRAMME (designed once, per cycle)
+  name, goal, totalWeeks, rationale
+  split:       the days, and the movements in each      <- fixed for the cycle
+  progression: the rule (e.g. double progression, +5 lb at top of range)
+  weeks[]:     per-week phase, set count, intensity target, intent
+
+WEEK N (rendered)
+  = programme.split
+  + programme.weeks[N]
+  + what was actually lifted so far
+```
+
+Movements are chosen **once**, at programme design. Swaps (`T3-9`) edit the programme, which is
+already how persistent swaps behave — that mechanism was built for this model before the model
+existed.
+
+### Rendering a week should mostly not need a model call
+
+Given the programme's rule and the last week's logged sets, next week's prescription is a
+calculation, not a judgement. `Squat 3x8 @ 185, all sets at the top of the range → 3x8 @ 190`
+is arithmetic.
+
+That makes weeks **instant, free, and auditable** — the app can show *why* a weight moved,
+instead of a number a model produced for reasons nobody can inspect. It is the same principle
+that drove `T3-10`: compute what can be computed, and do not let the model invent data.
+
+Keep the model for the things that genuinely need judgement:
+- **Designing the programme** — once per cycle
+- **Adapting it** — "my back is sore", a journal entry flagging fatigue, a missed week
+- **Designing the next cycle** from the last one
+
+### The end of a cycle is the interesting moment
+
+A finished cycle is finished. Extending it is incoherent: a block that has peaked and deloaded
+has nowhere to go. Adding weeks to the end produces a tail with no plan behind it — which is
+why the "Add More Weeks" button was removed the moment it was proposed.
+
+What should happen is that **cycle N+1 is designed from cycle N**: what was run, what actually
+got lifted, what the journal said, what stalled, what to focus on next. That is where `T3-12`
+(long-term review) belongs — not as a separate "insights" feature, but as the input to the next
+programme.
+
+## What this changes
+
+| Item | Effect |
+|---|---|
+| `T3-9` swaps | Already correct. Persistent swaps edit the programme; that is the model. |
+| `T3-10` metrics | Already correct, and becomes the input to next-cycle design. |
+| `T3-12` long-term review | **Reframed.** Not an insights screen — the brief for the next programme. |
+| `T3-13b` coach | Unchanged, and gets much better: it can explain the programme, not just the week. |
+| Naming guidance | Becomes a **belt** over a structural fix, rather than the only defence. |
+| Week generation | Reworked: render from the programme instead of regenerating from scratch. |
+
+## Open questions
+
+- **Does the user see the whole programme up front?** Seeing all six weeks is motivating and
+  makes the arc legible. It also invites treating it as fixed when the point is that it adapts.
+  Leaning: show the arc (phases, movements, weekly intent) but not fabricated future loads,
+  since those genuinely depend on what happens.
+- **How much of week rendering is deterministic?** Leaning heavily deterministic for load
+  progression, with the model consulted when the journal or a missed session says something
+  changed.
+- **What happens to a cycle abandoned mid-way?** It should still inform the next programme —
+  "you stopped in week 3 twice now" is a real signal.
+
+## Migration
+
+The current schema already carries most of this. `cycles` holds the cycle, `week_plans` holds
+per-week plans, and `T3-9` already stores cycle-level substitutions. What is missing is the
+programme itself — the split, the progression rule and the weekly arc — which is one more JSONB
+column on `cycles` and a migration that adds it.
+
+Existing cycles have no programme. They should be allowed to finish under the current
+week-at-a-time behaviour rather than being retrofitted.
+
+
 ## Phase 2 design rationale
 
 Reasoning behind D6-D10. **Current status is tracked in `Decisions & open questions` below** --
@@ -1485,3 +1599,32 @@ own: a one-week cycle and week 1 of six looked identical, which is why this stay
 Testing only the paths the current client takes would have missed it entirely.
 
 Suite is now **399 assertions across eleven files**.
+
+### 2026-09-20 — The founding premise was wrong in my head
+
+The user pushed back on two things, and the second is the one that matters.
+
+**"There should be no Add More Weeks."** Removed immediately. A cycle that has peaked and
+deloaded has nowhere to go; bolting weeks onto the end produces a tail with no plan behind it.
+The answer to a finished cycle is the next cycle, informed by the one just finished.
+
+**"It is a program generator, not a workout generator."** Written up in full as **Phase 3**
+above. Everything built so far generates each week independently and labels it with a phase;
+nothing carries the *design* of the programme between weeks. Week 4 is not week 4 of anything.
+
+The uncomfortable part is that **three bugs already fixed were symptoms of this**, and I treated
+each as its own defect:
+
+- Movement names drifting between weeks — patched with a prompt instruction. If movements are
+  chosen once for the whole cycle, drift cannot happen. The prompt fix is a workaround for a
+  structural problem.
+- Deloads that were a hope rather than a plan.
+- Progression nobody can explain, because the reasoning lived in a discarded prompt.
+
+Also worth recording: `T3-9`'s persistent swaps already edit "the plan for the rest of the
+cycle", which is the programme model in miniature. That mechanism was built for an architecture
+that did not exist yet, which is a sign the model was right and the framing was not.
+
+**Still unresolved: the user states their cycle was created as 6 weeks**, which contradicts the
+one-week diagnosis from earlier today. Need the plan header text to settle it — it now reads
+"Week N of M" precisely so this is answerable at a glance.

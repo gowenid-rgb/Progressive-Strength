@@ -1673,3 +1673,26 @@ Adjust Program. Rendering a week is not one. Cheap, instant, inspectable.
 behaviour rather than being retrofitted with a design that was never followed.
 
 Suite is now **450 assertions across twelve files**.
+
+### 2026-09-20 — The client half of Phase 3 was never written to disk
+
+The server half deployed fine. The client half did not, and the failure was silent in an
+instructive way.
+
+The patch script applied five edits in memory and wrote the file **once at the end**. A sixth
+edit failed its anchor, the script aborted, and the write never ran — so every "patched:" line
+it printed was a lie about the filesystem. Worse, `npm test` stayed green: no suite exercises
+the client's call path, so nothing noticed the app was still calling the old endpoint.
+
+It only surfaced because the post-deploy check grepped the deployed HTML for the new code and
+found none. **The grep caught what twelve test suites could not.**
+
+**This is the fourth time in this project that a script has reported success it had not
+achieved** — the `&&`-chain `|| echo "none (good)"` masking earlier failures, twice, and now
+this. Same shape as the application bugs the whole project has been about: a success message
+not backed by the thing it claims. The script now writes after every individual patch, and
+verification greps the file on disk rather than trusting the script's output.
+
+Client half now in and verified in a browser: the header reads "Week 3 of 6", the timeline shows
+the full arc with phases, and the programme card expands to show the rationale, the progression
+rule in plain language, and every week's intent with the current week highlighted.

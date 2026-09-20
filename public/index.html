@@ -170,6 +170,8 @@
                 <div id="cycle-labels" class="flex justify-between text-[8px] uppercase tracking-widest text-textMuted mt-2 font-semibold px-1"></div>
             </div>
 
+            <div id="program-summary" class="px-6 pt-2"></div>
+
             <div id="plan-days-container" class="p-6 space-y-4">
                 <!-- Dynamic cards will be injected here -->
             </div>
@@ -631,7 +633,60 @@
             labels.innerHTML = labelHtml;
         }
 
+        // The programme is the thing the app generates; the week is a view of it. Showing the
+        // arc makes that legible -- previously a six-week cycle and a one-off week looked
+        // identical, which is how a cycle stayed stuck at "week 1 of 1" unnoticed.
+        function renderProgramSummary() {
+            const host = document.getElementById('program-summary');
+            if (!host) return;
+            const prog = currentCycle && currentCycle.program;
+            if (!prog) { host.innerHTML = ''; return; }
+
+            const open = host.dataset.open === 'true';
+            const weeks = Array.isArray(prog.weeks) ? prog.weeks : [];
+            const current = currentCycle.currentWeek;
+
+            const detail = open ? `
+                <div class="mt-4 pt-4 border-t border-borderSubtle">
+                    ${prog.rationale ? `<p class="text-xs text-textMuted leading-relaxed mb-4 italic">${escapeHtml(prog.rationale)}</p>` : ''}
+                    ${prog.progression && prog.progression.rule ? `
+                    <div class="mb-4">
+                        <div class="text-[9px] uppercase tracking-widest text-textMuted font-semibold mb-1.5">How you progress</div>
+                        <p class="text-xs text-textMain leading-relaxed">${escapeHtml(prog.progression.rule)}</p>
+                    </div>` : ''}
+                    <div class="text-[9px] uppercase tracking-widest text-textMuted font-semibold mb-2">The plan</div>
+                    <div class="space-y-1.5">
+                        ${weeks.map(w => `
+                        <div class="flex gap-3 text-xs ${Number(w.week) === current ? 'text-white' : 'text-textMuted'}">
+                            <span class="font-semibold w-12 shrink-0">Wk ${w.week}</span>
+                            <span class="shrink-0 w-14 uppercase text-[9px] tracking-widest pt-0.5">${escapeHtml(w.phase || '')}</span>
+                            <span class="leading-relaxed">${escapeHtml(w.intent || '')}</span>
+                        </div>`).join('')}
+                    </div>
+                </div>` : '';
+
+            host.innerHTML = `
+            <div class="bg-surface border border-borderSubtle rounded-[20px] p-4">
+                <button onclick="toggleProgramSummary()" class="w-full flex items-center justify-between text-left">
+                    <div class="min-w-0">
+                        <div class="text-[9px] uppercase tracking-widest text-textMuted font-semibold mb-1">Your programme</div>
+                        <div class="text-sm text-white font-semibold truncate">${escapeHtml(prog.programName || 'Programme')}</div>
+                    </div>
+                    <span class="text-textMuted text-xs ml-3 shrink-0">${open ? 'Hide' : 'Details'}</span>
+                </button>
+                ${detail}
+            </div>`;
+        }
+
+        function toggleProgramSummary() {
+            const host = document.getElementById('program-summary');
+            if (!host) return;
+            host.dataset.open = host.dataset.open === 'true' ? 'false' : 'true';
+            renderProgramSummary();
+        }
+
         function renderPlan(plan) {
+            renderProgramSummary();
             // Update Title and Week
             document.getElementById('plan-title').innerText = plan.planName || document.getElementById('input-goal').value;
             const weekNum = plan.week || 1;
@@ -815,7 +870,18 @@
                 }
 
                 currentCycle = data.cycle;
-                await generatePlan({ silent: true });
+
+                // A cycle with a programme comes back with the week already rendered: no model
+                // call, no wait. Cycles predating Phase 3 have no programme, so those still
+                // generate a week the old way.
+                if (data.plan) {
+                    currentWorkoutPlan = data.plan;
+                    localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan));
+                    renderPlan(currentWorkoutPlan);
+                    nav('screen-plan', 'nav-plan');
+                } else {
+                    await generatePlan({ silent: true });
+                }
             } catch (e) {
                 alert(e.message);
                 if (btn) { btn.innerHTML = 'Start next week'; btn.disabled = false; }
@@ -1570,21 +1636,21 @@
             }
 
             const el = id => document.getElementById(id);
-            const totalWeeks = currentCycle ? currentCycle.totalWeeks : parseInt(el('input-weeks').value, 10);
+            const totalWeeks = parseInt(el('input-weeks').value, 10);
 
+            // History and journal are read server-side now: they are the brief for the whole
+            // programme, not context for one week, and the server has the authoritative copy.
             const payload = {
                 primaryGoal: el('input-goal').value,
                 experienceLevel: el('input-experience').value,
                 equipment: el('input-equipment').value,
                 trainingDays: el('input-days').value,
                 extraDetails: el('input-details').value,
-                totalWeeks,
-                workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]'),
-                journalEntries: JSON.parse(localStorage.getItem('journalEntries') || '[]')
+                totalWeeks
             };
 
             try {
-                const response = await fetch('/api/generate-plan', {
+                const response = await fetch('/api/generate-program', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify(payload)
@@ -1592,20 +1658,20 @@
 
                 if (!response.ok) {
                     const error = await response.json();
-                    alert("Error: " + (error.error || "Failed to generate plan."));
+                    alert("Error: " + (error.error || "Failed to design the programme."));
                     return;
                 }
 
-                const plan = await response.json();
-                currentWorkoutPlan = plan;
+                // The server creates the cycle, stores the programme and renders week 1, so
+                // there is nothing to sync back -- the plan already exists server-side. The old
+                // flow saved the plan from the client, which is what let the cycle be created
+                // without a length.
+                const result = await response.json();
+                currentCycle = result.cycle;
+                currentWorkoutPlan = result.plan;
                 localStorage.setItem('currentWorkoutPlan', JSON.stringify(currentWorkoutPlan));
 
-                // The save response carries the cycle, including its phase list, so the
-                // timeline draws from the server's view rather than a guess.
-                const saved = await syncData();
-                if (saved && saved.cycle) currentCycle = saved.cycle;
-
-                renderPlan(plan);
+                renderPlan(currentWorkoutPlan);
                 nav('screen-plan', 'nav-plan');
             } catch (err) {
                 console.error(err);

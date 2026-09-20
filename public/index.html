@@ -635,7 +635,11 @@
             // Update Title and Week
             document.getElementById('plan-title').innerText = plan.planName || document.getElementById('input-goal').value;
             const weekNum = plan.week || 1;
-            document.getElementById('plan-week').innerText = 'Week ' + weekNum;
+            // "Week 1" alone hid the problem: a one-week cycle looked identical to week 1 of
+            // six. Showing the length makes the state legible at a glance.
+            document.getElementById('plan-week').innerText = currentCycle
+                ? 'Week ' + weekNum + ' of ' + currentCycle.totalWeeks
+                : 'Week ' + weekNum;
             document.getElementById('journal-week-badge').innerText = 'Week ' + weekNum;
 
             renderTimeline(weekNum);
@@ -699,8 +703,10 @@
                         ? `
                     <div class="bg-surface p-6 rounded-3xl border border-borderSubtle text-center text-textMuted">
                         <h3 class="text-white font-semibold mb-2">Cycle Complete</h3>
-                        <p class="text-sm mb-4">That is all ${total} ${total === 1 ? 'week' : 'weeks'} done. Reflect on how it went, then start your next cycle.</p>
-                        <button onclick="nav('screen-journal', 'nav-journal')" class="bg-white text-black px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-200">Go to Check-in</button>
+                        <p class="text-sm mb-5">That is all ${total} ${total === 1 ? 'week' : 'weeks'} done.</p>
+                        <button onclick="nav('screen-onboarding')" class="w-full bg-white text-black px-4 py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 mb-2">Start a New Cycle</button>
+                        <button onclick="changeCycleLength()" class="w-full bg-surfaceElevated border border-borderSubtle text-white px-4 py-3 rounded-xl text-sm font-semibold hover:border-white transition-colors mb-2">Keep Going — Add More Weeks</button>
+                        <button onclick="nav('screen-journal', 'nav-journal')" class="w-full text-xs text-textMuted hover:text-white py-2">Write a note first</button>
                     </div>`
                         : `
                     <div class="bg-surface p-6 rounded-3xl border border-borderSubtle text-center text-textMuted">
@@ -712,6 +718,45 @@
                         <button id="btn-advance-week" onclick="advanceWeek()" class="bg-white text-black px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200">Start Week ${week + 1}</button>
                     </div>`;
                 }
+            }
+        }
+
+        // Lets an existing cycle be lengthened (or shortened, down to the current week).
+        //
+        // The escape hatch for a cycle that was created without a length and defaulted to one
+        // week: it reads as permanently complete, and the only alternative was Reset, which
+        // throws away the plan.
+        async function changeCycleLength() {
+            if (!currentCycle) return alert('No active cycle to change.');
+
+            const answer = prompt(
+                'How many weeks should this cycle be?' + String.fromCharCode(10) + String.fromCharCode(10)
+                + 'Currently ' + currentCycle.totalWeeks + ' '
+                + (currentCycle.totalWeeks === 1 ? 'week' : 'weeks')
+                + ', and you are on week ' + currentCycle.currentWeek + '.',
+                String(Math.max(currentCycle.totalWeeks, currentCycle.currentWeek + 4))
+            );
+            if (answer === null) return;
+
+            const weeks = parseInt(answer, 10);
+            if (!Number.isFinite(weeks)) return alert('Enter a number of weeks.');
+
+            try {
+                const res = await fetch('/api/cycle/length', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                    body: JSON.stringify({ totalWeeks: weeks })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Could not change the cycle length');
+
+                currentCycle = data.cycle;
+                renderPlan(currentWorkoutPlan);
+
+                // Lengthening a finished cycle means there is now a next week to build.
+                await maybeAdvanceWeek();
+            } catch (e) {
+                alert(e.message);
             }
         }
 

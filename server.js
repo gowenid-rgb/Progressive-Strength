@@ -77,10 +77,21 @@ app.post('/api/user/data', authenticateToken, async (req, res) => {
 
         let cycle = await repo.getActiveCycle(req.user.id);
         if (!cycle) {
-            cycle = await repo.startCycle(req.user.id, Object.assign(
-                { name: currentPlan.planName, totalWeeks: 1 },
-                cycleOptions || {}
-            ));
+            const opts = cycleOptions || {};
+            // Built explicitly rather than by Object.assign over a default: Object.assign
+            // copies an undefined property straight over the default, so a client that omitted
+            // totalWeeks produced a ONE WEEK cycle. Such a cycle is "complete" the moment its
+            // first week is logged, and there is no next week to advance to — which is exactly
+            // how a cycle could end up permanently finished on week 1.
+            cycle = await repo.startCycle(req.user.id, {
+                name: opts.name || currentPlan.planName,
+                goal: opts.goal,
+                experienceLevel: opts.experienceLevel,
+                equipment: opts.equipment,
+                trainingDays: opts.trainingDays,
+                extraDetails: opts.extraDetails,
+                totalWeeks: cycles.clampWeeks(opts.totalWeeks || currentPlan.totalWeeks || 6)
+            });
         }
 
         await repo.saveWeekPlan(cycle.id, cycle.current_week, currentPlan, { status: 'active' });
@@ -270,6 +281,40 @@ Return the number of weeks and one short sentence explaining why, addressed to t
     } catch (error) {
         console.error('Error recommending cycle length:', error);
         res.status(500).json({ error: error.message || 'Failed to recommend a cycle length' });
+    }
+});
+
+// Changes the length of the active cycle.
+//
+// Without this, a cycle's length was fixed forever at creation. Cycles created before the
+// length picker existed defaulted to a single week, leaving them permanently complete with no
+// route forward except discarding the cycle and its plan.
+app.post('/api/cycle/length', authenticateToken, async (req, res) => {
+    try {
+        const cycle = await repo.getActiveCycle(req.user.id);
+        if (!cycle) return res.status(400).json({ error: 'No active cycle' });
+
+        const weeks = cycles.clampWeeks(req.body && req.body.totalWeeks);
+        if (weeks < cycle.current_week) {
+            return res.status(400).json({
+                error: `You are already on week ${cycle.current_week}, so the cycle cannot be shorter than that.`
+            });
+        }
+
+        const updated = await repo.setCycleLength(cycle.id, weeks);
+        if (!updated) return res.status(500).json({ error: 'Could not update the cycle' });
+
+        res.json({
+            cycle: {
+                id: updated.id,
+                totalWeeks: updated.total_weeks,
+                currentWeek: updated.current_week,
+                phases: cycles.phasesForCycle(updated.total_weeks)
+            }
+        });
+    } catch (error) {
+        console.error('Error changing cycle length:', error);
+        res.status(500).json({ error: 'Failed to change the cycle length' });
     }
 });
 

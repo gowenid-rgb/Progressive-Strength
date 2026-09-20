@@ -79,6 +79,10 @@ function harness(rows, storage) {
         renderPlan = function () {};
         nav = function (s) { __log.nav = s; };
         startWorkout = function (i, opts) { __log.started = { dayIndex: i, opts: opts || null }; };
+        advanceWeek = async function () { __log.advanced = (__log.advanced || 0) + 1; };
+        showBuildingWeek = function (w, t) { __log.building = { week: w, total: t }; };
+        hideBuildingWeek = function () { __log.hidBuilding = true; };
+        globalThis.__setCycle = function (c) { currentCycle = c; };
         globalThis.__set = function (plan, dayIdx, startedAt) {
             currentWorkoutPlan = plan; activeDayIndex = dayIdx; workoutStartTime = startedAt;
         };
@@ -201,6 +205,57 @@ const PLAN = {
     h.ctx.clearLocalSession();
     check('logout clears the in-progress workout', h.store.has('activeWorkout'), false);
     check('logout clears the plan too', h.store.has('currentWorkoutPlan'), false);
+
+    console.log('\n=== the week rolls over on its own ===\n');
+
+    // Finishing the last day of a week used to leave a "Start Week 2" button for the user to
+    // find. The week is over; the next one is what they want.
+    const weekPlan = done => ({
+        planName: 'Block',
+        days: [
+            { dayName: 'A', completed: done, exercises: [{ name: 'Squat' }] },
+            { dayName: 'B', completed: done, exercises: [{ name: 'Bench' }] }
+        ]
+    });
+
+    h = harness([], {});
+    h.ctx.__set(weekPlan(true), 0, null);
+    h.ctx.__setCycle({ id: 1, totalWeeks: 6, currentWeek: 1 });
+    await h.ctx.maybeAdvanceWeek();
+    check('every day done advances the week', h.log.advanced, 1);
+    check('the wait is explained rather than silent', h.log.building.week, 2);
+    check('building state names the cycle length', h.log.building.total, 6);
+    check('building state is cleared afterwards', h.log.hidBuilding, true);
+
+    // Mid-week must not advance.
+    const partial = weekPlan(true);
+    partial.days[1].completed = false;
+    h = harness([], {});
+    h.ctx.__set(partial, 0, null);
+    h.ctx.__setCycle({ id: 1, totalWeeks: 6, currentWeek: 1 });
+    await h.ctx.maybeAdvanceWeek();
+    check('an unfinished day does not advance', h.log.advanced, undefined);
+    check('no building state mid-week', h.log.building, undefined);
+
+    // The last week of a cycle ends the cycle; the cycle-complete card handles that.
+    h = harness([], {});
+    h.ctx.__set(weekPlan(true), 0, null);
+    h.ctx.__setCycle({ id: 1, totalWeeks: 6, currentWeek: 6 });
+    await h.ctx.maybeAdvanceWeek();
+    check('the final week does not auto-advance', h.log.advanced, undefined);
+
+    // No cycle at all (a plan generated before cycles existed) must not throw.
+    h = harness([], {});
+    h.ctx.__set(weekPlan(true), 0, null);
+    h.ctx.__setCycle(null);
+    await h.ctx.maybeAdvanceWeek();
+    check('no cycle is a safe no-op', h.log.advanced, undefined);
+
+    h = harness([], {});
+    h.ctx.__set(null, 0, null);
+    h.ctx.__setCycle({ id: 1, totalWeeks: 6, currentWeek: 1 });
+    await h.ctx.maybeAdvanceWeek();
+    check('no plan is a safe no-op', h.log.advanced, undefined);
 
     console.log('\n' + (fail === 0 ? 'ALL PASS' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed\n');
     process.exit(fail === 0 ? 0 : 1);

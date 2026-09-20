@@ -87,7 +87,14 @@ app.post('/api/user/data', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            cycle: { id: cycle.id, totalWeeks: cycle.total_weeks, currentWeek: cycle.current_week }
+            cycle: {
+                id: cycle.id,
+                totalWeeks: cycle.total_weeks,
+                currentWeek: cycle.current_week,
+                // Without this the client's cycle object loses its phase list on every save,
+                // and the timeline silently drops its Base/Build/Peak labels until a reload.
+                phases: cycles.phasesForCycle(cycle.total_weeks)
+            }
         });
     } catch (err) {
         console.error('Save user data failed:', err);
@@ -266,6 +273,23 @@ app.post('/api/generate-plan', authenticateToken, aiLimiters, async (req, res) =
 
         // Permanent swaps must survive into weeks generated later, or "this and future"
         // silently means "this week only" the moment the next week is built.
+        // Reuse the names already in the user's history. A model asked cold will write
+        // "Deadlift" one week and "Barbell Deadlift" the next, which splits one lift into two
+        // in every aggregate that groups by name.
+        const knownNames = await repo.getKnownExerciseNames(req.user.id);
+        const namesBlock = knownNames.length
+            ? [
+                '',
+                '',
+                'MOVEMENT NAMES ALREADY IN THIS USER\'S HISTORY:',
+                knownNames.map(n => '- ' + n).join('\n'),
+                '',
+                'When you program any of these movements, reuse the EXACT name shown above.',
+                'Do not rephrase, reorder or add equipment words to a name that already exists.',
+                'Consistent naming is what lets progress be tracked across weeks.'
+              ].join('\n')
+            : '';
+
         const subs = activeCycle ? await repo.getSubstitutions(activeCycle.id) : [];
         const subsBlock = subs.length
             ? [
@@ -279,7 +303,7 @@ app.post('/api/generate-plan', authenticateToken, aiLimiters, async (req, res) =
 
         const prompt = `You are an expert AI strength and conditioning coach.
 
-${cycles.phaseGuidance(weekNumber, totalWeeks)}${subsBlock}
+${cycles.phaseGuidance(weekNumber, totalWeeks)}${subsBlock}${namesBlock}
 
 User Profile:
 - Goal: ${primaryGoal}

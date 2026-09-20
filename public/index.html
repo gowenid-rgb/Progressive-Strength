@@ -706,10 +706,47 @@
                     <div class="bg-surface p-6 rounded-3xl border border-borderSubtle text-center text-textMuted">
                         <h3 class="text-white font-semibold mb-2">Week ${week} Complete</h3>
                         <p class="text-sm mb-4">Nice work. Week ${week + 1} of ${total} is next.</p>
+                        <!-- Normally auto-advance has already run by the time this renders. It
+                             remains for the cases where it could not: offline, or a failed
+                             generation the user wants to retry. -->
                         <button id="btn-advance-week" onclick="advanceWeek()" class="bg-white text-black px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200">Start Week ${week + 1}</button>
                     </div>`;
                 }
             }
+        }
+
+        // Called after the last day of a week is logged. Silent when there is more of the
+        // week left, or when the cycle has finished -- the cycle-complete card handles that.
+        async function maybeAdvanceWeek() {
+            if (!currentWorkoutPlan || !Array.isArray(currentWorkoutPlan.days)) return;
+            if (!currentWorkoutPlan.days.every(d => d.completed)) return;
+            if (!currentCycle) return;
+            if (currentCycle.currentWeek >= currentCycle.totalWeeks) return;
+
+            const next = currentCycle.currentWeek + 1;
+            showBuildingWeek(next, currentCycle.totalWeeks);
+            try {
+                await advanceWeek();
+            } finally {
+                hideBuildingWeek();
+            }
+        }
+
+        // Generating a week is a ten-second model call. Saying so beats an app that appears
+        // to have frozen right after a workout.
+        function showBuildingWeek(week, total) {
+            const container = document.getElementById('plan-days-container');
+            if (!container) return;
+            container.innerHTML = `
+            <div class="bg-surface p-8 rounded-3xl border border-borderSubtle text-center">
+                <svg class="animate-spin h-6 w-6 mx-auto mb-4 text-white" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <h3 class="text-white font-semibold mb-1">Building week ${week}</h3>
+                <p class="text-sm text-textMuted">Week ${week} of ${total}, programmed from how this week went.</p>
+            </div>`;
+        }
+
+        function hideBuildingWeek() {
+            if (currentWorkoutPlan) renderPlan(currentWorkoutPlan);
         }
 
         // Moves the cycle on a week and generates that week's plan. The server owns the week
@@ -840,7 +877,7 @@
                     <div class="bg-surface border border-borderSubtle rounded-[18px] px-4 py-3 flex items-center justify-between gap-3">
                         <div class="min-w-0">
                             <div class="text-sm text-white font-medium truncate">${escapeHtml(x.name)}</div>
-                            <div class="text-[10px] text-textMuted mt-0.5">${x.sessions} ${x.sessions === 1 ? 'session' : 'sessions'}</div>
+                            <div class="text-[10px] text-textMuted mt-0.5">${x.sessions} ${x.sessions === 1 ? 'session' : 'sessions'}${x.aliases && x.aliases.length ? ' · also logged as ' + escapeHtml(x.aliases[0]) : ''}</div>
                         </div>
                         <div class="text-sm font-semibold text-white whitespace-nowrap">${fmtNumber(x.best.weight)} × ${x.best.reps}</div>
                     </div>`).join('')}
@@ -851,11 +888,21 @@
         function renderProgressionSection(movement) {
             const m = metricsCache;
             if (!m.trendable.length) {
+                // Naming the movements that fall short makes the reason visible. Two entries
+                // that are obviously the same lift under different names is a diagnosis, not
+                // a mystery.
+                const singles = m.movements.filter(x => x.points.length === 1).slice(0, 6);
+                const list = singles.length
+                    ? `<div class="mt-4 space-y-1.5 text-left">`
+                      + singles.map(x => `<div class="text-xs text-textMuted flex justify-between"><span class="truncate mr-3">${escapeHtml(x.name)}</span><span class="whitespace-nowrap">1 session</span></div>`).join('')
+                      + `</div>`
+                    : '';
                 return `
                 <div>
                     <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Progression</h3>
-                    <div class="bg-surface border border-borderSubtle rounded-[20px] p-6 text-center">
-                        <p class="text-sm text-textMuted leading-relaxed">A movement needs two logged sessions before there is a line to draw.</p>
+                    <div class="bg-surface border border-borderSubtle rounded-[20px] p-6">
+                        <p class="text-sm text-textMuted leading-relaxed text-center">A movement needs two logged sessions before there is a line to draw.</p>
+                        ${list}
                     </div>
                 </div>`;
             }
@@ -1460,6 +1507,11 @@
             alert('Workout saved - ' + checked.length + ' ' + (checked.length === 1 ? 'set' : 'sets') + ' logged.');
             renderPlan(currentWorkoutPlan);
             nav('screen-plan', 'nav-plan');
+
+            // Finishing the last day of a week rolls straight into the next one. Previously
+            // this waited behind a "Start Week 2" button, which is an odd thing to make
+            // someone find: the week is over, the next one is what they want.
+            await maybeAdvanceWeek();
         }
 
         async function generatePlan(opts = {}) {

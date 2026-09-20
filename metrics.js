@@ -19,6 +19,35 @@ function toPounds(row) {
     return row.weight_unit === 'kg' ? v * LB_PER_KG : v;
 }
 
+// Words that describe the same movement regardless of where a language model puts them.
+// Deliberately NOT stripped: barbell, dumbbell, machine, cable. Those change the load, so
+// merging "Barbell Bench Press" with "Dumbbell Bench Press" would draw a chart that falls off
+// a cliff between two unrelated lifts. Under-merging shows less; over-merging shows something
+// false, which is worse.
+const NAME_NOISE = new Set(['the', 'a', 'an', 'with', 'and', 'grip', 'style']);
+
+/**
+ * Groups exercise names that are the same movement written differently.
+ *
+ * Names come from a language model and drift between weeks: "Barbell Bench Press" one week,
+ * "Bench Press (Barbell)" the next. Grouped by exact string, that is two movements with one
+ * session each — no progression line, and a best-sets list full of near-duplicates. Which is
+ * exactly what "the graphs aren't working" looked like.
+ *
+ * Sorting the words makes word ORDER and punctuation irrelevant while keeping the word SET
+ * significant, so equipment differences still separate properly.
+ */
+function canonicalName(name) {
+    return String(name === null || name === undefined ? '' : name)
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]+/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+        .filter(w => !NAME_NOISE.has(w))
+        .sort()
+        .join(' ');
+}
+
 function startOfWeek(now) {
     // Monday. Training weeks are talked about as Monday-to-Sunday, and a Sunday session
     // landing in "next week" reads as a bug to anyone looking at it.
@@ -78,14 +107,20 @@ function computeMetrics(rows, now = new Date()) {
         w.sets += 1;
         totalSets += 1;
 
+        // Keyed by canonical form, displayed under the most recent spelling — that is what
+        // the user's current plan calls it, so it is the name they will recognise.
         const name = r.exercise_name;
-        if (!movements.has(name)) {
-            movements.set(name, {
-                name, sessions: new Set(), sets: 0, volume: 0,
+        const key = canonicalName(name) || String(name || '').toLowerCase();
+        if (!movements.has(key)) {
+            movements.set(key, {
+                name, aliases: new Set(), sessions: new Set(), sets: 0, volume: 0,
                 best: null, points: new Map()
             });
         }
-        const m = movements.get(name);
+        const m = movements.get(key);
+        m.aliases.add(name);
+        // Rows arrive oldest-first, so the last write wins and the newest spelling sticks.
+        m.name = name;
         m.sessions.add(r.workout_id);
         m.sets += 1;
         m.volume += volume;
@@ -111,6 +146,8 @@ function computeMetrics(rows, now = new Date()) {
     const movementList = Array.from(movements.values())
         .map(m => ({
             name: m.name,
+            // Surfaced so a name that drifted is visible rather than mysterious.
+            aliases: Array.from(m.aliases).filter(a => a !== m.name),
             sessions: m.sessions.size,
             sets: m.sets,
             volume: Math.round(m.volume),
@@ -146,4 +183,4 @@ function computeMetrics(rows, now = new Date()) {
     };
 }
 
-module.exports = { computeMetrics, toPounds, startOfWeek, startOfMonth, startOfYear, LB_PER_KG };
+module.exports = { computeMetrics, canonicalName, toPounds, startOfWeek, startOfMonth, startOfYear, LB_PER_KG };

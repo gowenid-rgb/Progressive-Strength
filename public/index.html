@@ -703,9 +703,8 @@
                         ? `
                     <div class="bg-surface p-6 rounded-3xl border border-borderSubtle text-center text-textMuted">
                         <h3 class="text-white font-semibold mb-2">Cycle Complete</h3>
-                        <p class="text-sm mb-5">That is all ${total} ${total === 1 ? 'week' : 'weeks'} done.</p>
+                        <p class="text-sm mb-5">That is all ${total} ${total === 1 ? 'week' : 'weeks'} done. Your next cycle builds on what you just did.</p>
                         <button onclick="nav('screen-onboarding')" class="w-full bg-white text-black px-4 py-3 rounded-xl text-sm font-semibold hover:bg-gray-200 mb-2">Start a New Cycle</button>
-                        <button onclick="changeCycleLength()" class="w-full bg-surfaceElevated border border-borderSubtle text-white px-4 py-3 rounded-xl text-sm font-semibold hover:border-white transition-colors mb-2">Keep Going — Add More Weeks</button>
                         <button onclick="nav('screen-journal', 'nav-journal')" class="w-full text-xs text-textMuted hover:text-white py-2">Write a note first</button>
                     </div>`
                         : `

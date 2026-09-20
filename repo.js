@@ -98,6 +98,23 @@ async function getSubstitutions(cycleId) {
     return Array.isArray(r.rows[0].substitutions) ? r.rows[0].substitutions : [];
 }
 
+/**
+ * Changes the length of the active cycle.
+ *
+ * Needed because cycle length was previously fixed at creation with no way to correct it, and
+ * cycles created before the length picker existed were silently one week long — permanently
+ * "complete" with no way forward that did not throw the cycle away.
+ */
+async function setCycleLength(cycleId, totalWeeks) {
+    const r = await db.query(
+        `UPDATE cycles SET total_weeks = $2
+          WHERE id = $1 AND status = 'active' AND $2 >= current_week
+          RETURNING *`,
+        [cycleId, totalWeeks]
+    );
+    return r.rows[0] || null;
+}
+
 async function endActiveCycle(userId, status = 'abandoned') {
     const r = await db.query(
         `UPDATE cycles SET status = $2, completed_at = now()
@@ -333,7 +350,7 @@ async function getJournalEntries(userId, limit = 20) {
 }
 
 module.exports = {
-    getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek,
+    getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek, setCycleLength,
     addSubstitution, getSubstitutions,
     saveWeekPlan, getWeekPlan,
     appendWorkout, getWorkoutHistory, getSetsForMetrics, getKnownExerciseNames,

@@ -140,5 +140,86 @@ function req(method, p, body, token) {
     const noCycle = await req('POST', '/api/cycle/advance', {}, token);
     check('advancing with no cycle is a clean 400', noCycle.status, 400);
 
+    console.log('\n=== a cycle is never accidentally one week long ===\n');
+
+    // The trap: Object.assign copies an undefined property straight over the default, so a
+    // client that omitted totalWeeks produced a ONE WEEK cycle. Such a cycle is complete the
+    // moment its first week is logged, with no next week to advance to -- permanently finished
+    // on week 1 with no way forward.
+    const noOpts = await req('POST', '/api/auth/register', { email: 'noopts@example.com', password: 'password1234' });
+    await req('POST', '/api/user/data', {
+        currentPlan: { planName: 'P', days: [{ dayName: 'A', exercises: [{ name: 'Squat', sets: 3, reps: '5' }] }] }
+    }, noOpts.body.token);
+    let d = await req('GET', '/api/user/data', undefined, noOpts.body.token);
+    check('omitting cycleOptions does not make a 1-week cycle', d.body.cycle.totalWeeks > 1, true);
+
+    // An explicitly undefined totalWeeks is the exact shape the old client sent.
+    const undef = await req('POST', '/api/auth/register', { email: 'undef@example.com', password: 'password1234' });
+    await req('POST', '/api/user/data', {
+        currentPlan: { planName: 'P', days: [{ dayName: 'A', exercises: [{ name: 'Squat', sets: 3, reps: '5' }] }] },
+        cycleOptions: { totalWeeks: undefined, goal: 'Strength' }
+    }, undef.body.token);
+    d = await req('GET', '/api/user/data', undefined, undef.body.token);
+    check('undefined totalWeeks does not make a 1-week cycle', d.body.cycle.totalWeeks > 1, true);
+
+    // The plan carries the length the server stamped on it; use it when the client forgets.
+    const fromPlan = await req('POST', '/api/auth/register', { email: 'fromplan@example.com', password: 'password1234' });
+    await req('POST', '/api/user/data', {
+        currentPlan: { planName: 'P', totalWeeks: 8, days: [{ dayName: 'A', exercises: [{ name: 'Squat', sets: 3, reps: '5' }] }] }
+    }, fromPlan.body.token);
+    d = await req('GET', '/api/user/data', undefined, fromPlan.body.token);
+    check('length falls back to the plan', d.body.cycle.totalWeeks, 8);
+
+    console.log('\n=== an existing cycle can be lengthened ===\n');
+
+    // The escape hatch for a cycle already stuck at one week.
+    const stuck = await req('POST', '/api/auth/register', { email: 'stuck@example.com', password: 'password1234' });
+    const stuckToken = stuck.body.token;
+    await req('POST', '/api/user/data', {
+        currentPlan: { planName: 'P', days: [{ dayName: 'A', exercises: [{ name: 'Squat', sets: 3, reps: '5' }] }] },
+        cycleOptions: { totalWeeks: 1 }
+    }, stuckToken);
+    d = await req('GET', '/api/user/data', undefined, stuckToken);
+    check('a 1-week cycle can no longer even be created', d.body.cycle.totalWeeks >= cycles.MIN_WEEKS, true);
+
+    // Reproduce the legacy state directly: rows written before the length picker existed are
+    // already total_weeks = 1 in the database, and clamping on write cannot reach them.
+    await pg.query("UPDATE cycles SET total_weeks = 1 WHERE id = $1", [d.body.cycle.id]);
+    d = await req('GET', '/api/user/data', undefined, stuckToken);
+    check('legacy 1-week cycle reads back as 1 week', d.body.cycle.totalWeeks, 1);
+    check('and it reads as already complete', d.body.cycle.currentWeek >= d.body.cycle.totalWeeks, true);
+
+    let len = await req('POST', '/api/cycle/length', { totalWeeks: 6 }, stuckToken);
+    check('the cycle can be lengthened', len.status, 200);
+    check('new length returned', len.body.cycle.totalWeeks, 6);
+    check('phases recomputed for the new length', len.body.cycle.phases.length, 6);
+    check('current week untouched', len.body.cycle.currentWeek, 1);
+
+    d = await req('GET', '/api/user/data', undefined, stuckToken);
+    check('the change persisted', d.body.cycle.totalWeeks, 6);
+    check('there is now a week to advance to', d.body.cycle.currentWeek < d.body.cycle.totalWeeks, true);
+
+    // Walk to week 4, then try to shorten below it.
+    for (let i = 0; i < 3; i++) await req('POST', '/api/cycle/advance', {}, stuckToken);
+    d = await req('GET', '/api/user/data', undefined, stuckToken);
+    check('now on week 4', d.body.cycle.currentWeek, 4);
+
+    const tooShort = await req('POST', '/api/cycle/length', { totalWeeks: 2 }, stuckToken);
+    check('cannot shorten below the current week', tooShort.status, 400);
+    check('and says why', /already on week 4/.test(tooShort.body.error), true);
+    d = await req('GET', '/api/user/data', undefined, stuckToken);
+    check('length unchanged after a rejected shorten', d.body.cycle.totalWeeks, 6);
+
+    const shrinkToNow = await req('POST', '/api/cycle/length', { totalWeeks: 4 }, stuckToken);
+    check('shortening to exactly the current week is allowed', shrinkToNow.status, 200);
+    check('which completes the cycle', shrinkToNow.body.cycle.totalWeeks, 4);
+
+    const absurd = await req('POST', '/api/cycle/length', { totalWeeks: 500 }, stuckToken);
+    check('absurd lengths are clamped, not rejected', absurd.body.cycle.totalWeeks, cycles.MAX_WEEKS);
+
+    const noCycleLen = await req('POST', '/api/cycle/length', { totalWeeks: 6 },
+        (await req('POST', '/api/auth/register', { email: 'nocycle@example.com', password: 'password1234' })).body.token);
+    check('no active cycle is a clean 400', noCycleLen.status, 400);
+
     report();
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(1); });

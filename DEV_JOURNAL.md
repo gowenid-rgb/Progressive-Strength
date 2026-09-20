@@ -1448,3 +1448,40 @@ asserting it arrived, which is exactly how it reached one endpoint and not the o
 cover both paths, the deduplication, and the empty-history case.
 
 Suite is now **379 assertions across eleven files**.
+
+### 2026-09-20 — Why week 2 never appeared: two bugs, both mine
+
+The user reported a completed week with no way to generate week 2. Auto-advance was not the
+problem — the cause was upstream of it.
+
+**1. Cycles could be created one week long, silently.** `POST /api/user/data` built its options
+as `Object.assign({ totalWeeks: 1 }, cycleOptions)`. **`Object.assign` copies an undefined
+property straight over the default**, so a client that omitted `totalWeeks` — which is every
+client from before `T3-11` shipped the length picker — produced a one-week cycle.
+
+A one-week cycle is *complete the moment its first week is logged*. `isLastWeek` is true, the
+"Week 1 Complete → Start Week 2" card never renders, and there is no next week to advance to.
+Permanently finished on week 1.
+
+The timing is the damning part: after the `T3-14` purge I told the user to sign in and create a
+new cycle. That was **before** `T3-11` added the length picker, so the cycle they have been
+testing against was almost certainly created exactly this way.
+
+Options are now built explicitly rather than merged over a default, and the length is clamped, so
+this cannot recur. Cycles already at one week in the database are unreachable by that fix, hence:
+
+**2. There was no way out.** Cycle length was fixed forever at creation, and the
+"Cycle Complete" card's only button went to Check-in — which the `T3-13a` rewrite turned into a
+notes-only screen. **I created that dead end and never revisited the card.** The sole escape was
+the small RESET chip, which discards the plan.
+
+Now: `POST /api/cycle/length` changes an active cycle's length (clamped, and never below the
+current week), the cycle-complete card offers **Start a New Cycle** and **Keep Going — Add More
+Weeks**, and the plan header reads "Week 1 of 6" instead of "Week 1". That last one matters on its
+own: a one-week cycle and week 1 of six looked identical, which is why this stayed invisible.
+
+**The test that would have caught it** reproduces the legacy row directly — writing
+`total_weeks = 1` in the database, because clamping on write cannot reach data already stored.
+Testing only the paths the current client takes would have missed it entirely.
+
+Suite is now **399 assertions across eleven files**.

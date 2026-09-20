@@ -1420,3 +1420,31 @@ Base/Build/Peak labels until a reload. Not reported, not visible in any test, fo
 printing the actual response.
 
 Suite is now **365 assertions across ten files**.
+
+### 2026-09-20 — Naming discipline on both generation paths
+
+Existing duplicate lifts are left alone by decision — not worth a risky retroactive merge. The
+point is that it stops happening.
+
+**A gap in what shipped an hour ago.** The naming guidance reached `/api/generate-plan` only.
+`/api/recalibrate-plan` had none, so every "Adjust Program" request could rename every lift in
+the plan it was asked to adjust — the same bug, through a door left open. Both paths now share
+one `buildNamesBlock()` helper.
+
+**Names now come from logged history AND the plan in hand.** History alone is not enough:
+recalibrating week 1 before anything is logged has nothing to anchor to, and the model will
+happily rename lifts in the very plan it was handed. For generation the previous week's plan is
+included too, so week N+1 calls a movement what week N called it. The list is deduplicated —
+otherwise a name that is both logged and planned appears twice and the list grows every week.
+
+The instruction is now explicit rather than polite: reuse the name *character for character*,
+with the two real failure cases named (`"Barbell Bench Press"` must not become
+`"Bench Press (Barbell)"`, `"Deadlift"` must not become `"Barbell Deadlift"`), plus an explicit
+allowance so genuinely new movements can still be named.
+
+**`test/naming.test.js` inspects the prompt actually sent**, via a stub client that captures it.
+That is the test that was missing: the previous round shipped prompt guidance with nothing
+asserting it arrived, which is exactly how it reached one endpoint and not the other. Assertions
+cover both paths, the deduplication, and the empty-history case.
+
+Suite is now **379 assertions across eleven files**.

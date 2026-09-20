@@ -115,6 +115,32 @@ async function setCycleLength(cycleId, totalWeeks) {
     return r.rows[0] || null;
 }
 
+async function setCycleProgram(cycleId, program) {
+    const r = await db.query(
+        `UPDATE cycles SET program = $2 WHERE id = $1 AND status = 'active' RETURNING *`,
+        [cycleId, JSON.stringify(program)]
+    );
+    return r.rows[0] || null;
+}
+
+/**
+ * The last few finished or abandoned cycles, with their programmes, for designing the next one.
+ *
+ * An abandoned cycle is included deliberately: stopping in week 3 twice is a real signal about
+ * what to programme next, and dropping it would throw that away.
+ */
+async function getPreviousCycles(userId, limit = 3) {
+    const r = await db.query(
+        `SELECT id, name, goal, total_weeks, current_week, status, program, created_at, completed_at
+           FROM cycles
+          WHERE user_id = $1 AND status <> 'active'
+          ORDER BY created_at DESC
+          LIMIT $2`,
+        [userId, limit]
+    );
+    return r.rows;
+}
+
 async function endActiveCycle(userId, status = 'abandoned') {
     const r = await db.query(
         `UPDATE cycles SET status = $2, completed_at = now()
@@ -351,6 +377,7 @@ async function getJournalEntries(userId, limit = 20) {
 
 module.exports = {
     getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek, setCycleLength,
+    setCycleProgram, getPreviousCycles,
     addSubstitution, getSubstitutions,
     saveWeekPlan, getWeekPlan,
     appendWorkout, getWorkoutHistory, getSetsForMetrics, getKnownExerciseNames,

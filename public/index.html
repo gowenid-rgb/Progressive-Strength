@@ -1081,6 +1081,7 @@
                                 <h3 class="font-semibold text-lg text-white tracking-tight" data-ex-name="${exIndex}">${ex.name}</h3>
                                 <p class="text-[11px] text-textMuted uppercase tracking-widest mt-1 font-semibold">Goal: ${ex.sets} × ${ex.reps} reps</p>
                                 <p class="hidden text-[10px] text-amber-400 uppercase tracking-widest mt-1 font-semibold" data-ex-swapped="${exIndex}"></p>
+                                ${ex.progressionNote ? '<p class="text-[11px] text-textMuted mt-1.5 leading-relaxed">' + escapeHtml(ex.progressionNote) + '</p>' : ''}
                             </div>
                             <button onclick="openSwap(${exIndex})" class="shrink-0 text-[10px] font-bold uppercase tracking-widest text-textMuted hover:text-white bg-surfaceElevated border border-borderSubtle px-3 py-1.5 rounded-full transition-colors">Swap</button>
                         </div>

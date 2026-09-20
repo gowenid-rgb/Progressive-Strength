@@ -10,6 +10,7 @@ const db = require('./db');
 const repo = require('./repo');
 const cycles = require('./cycles');
 const { computeMetrics } = require('./metrics');
+const program = require('./program');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
 const { aiLimiters, authLimiter } = require('./rateLimits');
@@ -54,7 +55,8 @@ app.get('/api/user/data', authenticateToken, async (req, res) => {
                 status: cycle.status,
                 // Computed server-side and shipped whole, so the timeline cannot drift from
                 // the phase the prompt was actually given.
-                phases: cycles.phasesForCycle(cycle.total_weeks)
+                phases: cycles.phasesForCycle(cycle.total_weeks),
+                program: cycle.program || null
             } : null
         });
     } catch (err) {
@@ -284,6 +286,125 @@ Return the number of weeks and one short sentence explaining why, addressed to t
     }
 });
 
+// Designs a whole programme, then renders week 1 from it.
+//
+// This replaces generating a week at a time. The model is asked for the ARC -- the split, the
+// movements, the progression rule, and what each week is for -- exactly once per cycle. Weeks
+// after this are arithmetic, not a fresh improvisation wearing a phase label.
+app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res) => {
+    try {
+        if (!process.env.GEMINI_API_KEY) {
+            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        }
+
+        const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails } = req.body || {};
+        const totalWeeks = cycles.clampWeeks(req.body && req.body.totalWeeks);
+
+        // The last cycles and the journal are the brief for this one. "You stalled on bench in
+        // week 4" and "my shoulder hurt" are the things a coach would actually design around.
+        const [history, journal, previous] = await Promise.all([
+            repo.getWorkoutHistory(req.user.id, 60),
+            repo.getJournalEntries(req.user.id, 20),
+            repo.getPreviousCycles(req.user.id, 2)
+        ]);
+
+        const previousBlock = previous.length
+            ? [
+                '',
+                'PREVIOUS CYCLES (design this one as the next step, not a repeat):',
+                previous.map(c => {
+                    const p = c.program || {};
+                    const reached = c.status === 'completed'
+                        ? 'completed all ' + c.total_weeks + ' weeks'
+                        : 'stopped in week ' + c.current_week + ' of ' + c.total_weeks;
+                    const movements = program.programExerciseNames(p).slice(0, 20).join(', ');
+                    return '- "' + (p.programName || c.name || 'Untitled') + '" (' + (c.goal || 'no stated goal') + '), ' + reached
+                        + (movements ? '. Movements: ' + movements : '');
+                }).join('\n')
+              ].join('\n')
+            : '';
+
+        const phasePlan = cycles.phasesForCycle(totalWeeks)
+            .map(x => '- Week ' + x.week + ': ' + x.label)
+            .join('\n');
+
+        const prompt = [
+            'You are an expert strength and conditioning coach designing a complete training programme.',
+            '',
+            'LIFTER:',
+            '- Goal: ' + (primaryGoal || 'General fitness'),
+            '- Experience: ' + (experienceLevel || 'Beginner'),
+            '- Equipment: ' + (equipment || 'Full gym'),
+            '- Training days per week: ' + (trainingDays || 4),
+            '- Notes: ' + (extraDetails || 'None'),
+            previousBlock,
+            '',
+            'RECENT TRAINING LOG:',
+            history.length ? JSON.stringify(history.slice(-15)) : 'None yet.',
+            '',
+            'JOURNAL ENTRIES (how training has actually felt):',
+            journal.length ? journal.map(j => '- ' + j.entry).join('\n') : 'None yet.',
+            '',
+            'Design a ' + totalWeeks + '-week programme with this phase structure:',
+            phasePlan,
+            '',
+            'RULES:',
+            '1. Choose the movements ONCE. The same movements run for the whole cycle, on the same',
+            '   days. Progression comes from load and reps, not from swapping exercises weekly.',
+            '2. Name each movement exactly once and use that spelling everywhere. A renamed',
+            '   movement becomes a different exercise with no history.',
+            '3. Give a concrete progression rule the lifter can follow without you: when to add',
+            '   weight, and how much for upper vs lower body.',
+            '4. Provide an entry in "weeks" for EVERY week from 1 to ' + totalWeeks + '. Use',
+            '   setAdjustment to shape volume across the cycle (negative for a deload).',
+            '5. The deload week must genuinely reduce work, not just say so.',
+            '6. In "rationale", explain in two or three sentences why this programme, referring to',
+            '   the previous cycle and journal where relevant. The lifter reads this.'
+        ].join('\n');
+
+        const designed = await generateJSON({
+            prompt,
+            schema: program.PROGRAM_SCHEMA,
+            validate: p => program.validateProgram(p, totalWeeks),
+            label: 'generate-program'
+        });
+
+        designed.totalWeeks = totalWeeks;
+
+        // Retire any previous cycle and start this one, so the programme and the cycle it
+        // belongs to are created together rather than drifting apart.
+        const cycle = await repo.startCycle(req.user.id, {
+            name: designed.programName,
+            goal: primaryGoal,
+            experienceLevel,
+            equipment,
+            trainingDays,
+            extraDetails,
+            totalWeeks
+        });
+        await repo.setCycleProgram(cycle.id, designed);
+
+        const week1 = program.renderWeek(designed, 1, history);
+        await repo.saveWeekPlan(cycle.id, 1, week1, {
+            phase: cycles.phaseForWeek(1, totalWeeks), status: 'active'
+        });
+
+        res.json({
+            program: designed,
+            plan: week1,
+            cycle: {
+                id: cycle.id,
+                totalWeeks: cycle.total_weeks,
+                currentWeek: cycle.current_week,
+                phases: cycles.phasesForCycle(cycle.total_weeks)
+            }
+        });
+    } catch (error) {
+        console.error('Error generating programme:', error);
+        res.status(500).json({ error: error.message || 'Failed to design the programme' });
+    }
+});
+
 // Changes the length of the active cycle.
 //
 // Without this, a cycle's length was fixed forever at creation. Cycles created before the
@@ -331,8 +452,23 @@ app.post('/api/cycle/advance', authenticateToken, async (req, res) => {
         }
 
         const updated = await repo.advanceCycleWeek(cycle.id);
+
+        // With a programme, the next week is rendered from it: no model call, no waiting, and
+        // a progression the app can explain. Cycles predating Phase 3 have no programme, so
+        // they fall back to the client generating the week.
+        let plan = null;
+        if (updated.program) {
+            const history = await repo.getWorkoutHistory(req.user.id, 60);
+            plan = program.renderWeek(updated.program, updated.current_week, history);
+            await repo.saveWeekPlan(updated.id, updated.current_week, plan, {
+                phase: cycles.phaseForWeek(updated.current_week, updated.total_weeks),
+                status: 'active'
+            });
+        }
+
         res.json({
             completed: false,
+            plan,
             cycle: {
                 id: updated.id,
                 totalWeeks: updated.total_weeks,

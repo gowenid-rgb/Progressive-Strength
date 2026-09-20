@@ -663,7 +663,7 @@ spending it on a mechanism rather than only on tables is what stops this recurri
 
 ---
 
-# Phase 3 — It is a program generator, not a workout generator
+# Phase 3 — It is a program generator, not a workout generator · **CORE SHIPPED 2026-09-20**
 
 Added 2026-09-20, after the user corrected the founding premise. This is the most important
 entry in this document: several things built so far are shaped by the wrong model.
@@ -1628,3 +1628,48 @@ that did not exist yet, which is a sign the model was right and the framing was 
 **Still unresolved: the user states their cycle was created as 6 weeks**, which contradicts the
 one-week diagnosis from earlier today. Need the plan header text to settle it — it now reads
 "Week N of M" precisely so this is answerable at a glance.
+
+### 2026-09-20 — Phase 3 core shipped: programmes are designed, weeks are rendered
+
+Confirmed first: the header read **"Week 1 of 1"**. The six weeks the user chose were name-only.
+`Object.assign` copied an undefined `totalWeeks` over the default, and nothing ever tracked the
+cycle. That is now impossible, and more importantly it no longer matters — the cycle is created
+server-side as part of designing the programme, not assembled from whatever the client happened
+to send.
+
+**What shipped.** Migration 004 adds `cycles.program`. `POST /api/generate-program` asks the
+model for the ARC once per cycle — the split, the movements, the progression rule, and what each
+week is for — then stores it, creates the cycle, and renders week 1. Advancing renders the next
+week **from the programme with no model call at all**, asserted by a test that counts them.
+
+**Progression is now arithmetic, and it explains itself.** Double progression: hold the load
+until every set reaches the top of the rep range, then add 5 lb upper / 10 lb lower. Each
+prescription carries its reason, shown in the app:
+
+> *Up 5 lb — you hit 8 reps on every set at 185 lb.*
+> *Hold 185 lb — got 7 of 8 reps. Add weight once all sets reach 8.*
+
+That is the difference between a programme and a generator. Nobody could previously say why a
+weight moved, because the reasoning lived in a discarded prompt.
+
+**Three failure modes closed structurally rather than by prompt:**
+
+- **Name drift is impossible.** Movements are chosen once and reused every week. A test asserts
+  week 1 and week 6 contain identical movements. The naming instruction added earlier today is
+  now a belt over a structural fix.
+- **Deloads are real.** `setAdjustment` cuts sets and the prescription drops ~15% off the top
+  set, rather than the prompt saying "deload" and hoping.
+- **A programme that does not cover every week is rejected** at validation. A six-week cycle
+  describing four weeks used to be perfectly acceptable output.
+
+**The next cycle reads the last one.** Programme design receives previous cycles — including
+**abandoned** ones, deliberately, since stopping in week 3 twice is a real signal — plus the
+full history and journal entries.
+
+**What is deliberately still a model call:** designing the programme, and adapting it through
+Adjust Program. Rendering a week is not one. Cheap, instant, inspectable.
+
+**Cycles created before 004 have no programme** and fall back to the old week-at-a-time
+behaviour rather than being retrofitted with a design that was never followed.
+
+Suite is now **450 assertions across twelve files**.

@@ -152,6 +152,54 @@ app.post('/api/journal', authenticateToken, async (req, res) => {
     }
 });
 
+// Movement names the model must reuse.
+//
+// Each week is a separate model call, so asked cold it will write "Deadlift" one week and
+// "Barbell Deadlift" the next. Grouped by name in any aggregate, one climbing lift then looks
+// like two unrelated one-session movements and no progression can be drawn.
+//
+// Names come from logged history AND from the plan being worked on. History alone is not
+// enough: recalibrating week 1 before anything has been logged has nothing to anchor to, and
+// the model will happily rename every lift in the plan it was asked to adjust.
+function planExerciseNames(plan) {
+    if (!plan || !Array.isArray(plan.days)) return [];
+    const out = [];
+    plan.days.forEach(d => {
+        (d && Array.isArray(d.exercises) ? d.exercises : []).forEach(e => {
+            if (e && typeof e.name === 'string' && e.name.trim()) out.push(e.name.trim());
+        });
+    });
+    return out;
+}
+
+async function buildNamesBlock(userId, extraNames) {
+    const logged = await repo.getKnownExerciseNames(userId);
+
+    const seen = new Set();
+    const names = [];
+    for (const n of [].concat(logged || [], extraNames || [])) {
+        const key = String(n || '').trim().toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        names.push(String(n).trim());
+    }
+    if (!names.length) return '';
+
+    return [
+        '',
+        '',
+        'MOVEMENT NAMES ALREADY IN USE FOR THIS USER:',
+        names.map(n => '- ' + n).join('\n'),
+        '',
+        'When you program any of these movements, reuse the EXACT name shown above, character',
+        'for character. Do not rephrase it, reorder the words, or add or remove equipment words.',
+        '"Barbell Bench Press" must not become "Bench Press (Barbell)", and "Deadlift" must not',
+        'become "Barbell Deadlift". Consistent naming is what lets progress be tracked across',
+        'weeks; a renamed movement silently becomes a different exercise with no history.',
+        'Only invent a new name for a movement genuinely not in the list above.'
+    ].join('\n');
+}
+
 // Training aggregates. No AI, no cost, no latency beyond one query — the Metrics tab used to
 // be a button that spent a model call to produce a paragraph, which could not tell you what
 // your bench had done since March.
@@ -273,22 +321,15 @@ app.post('/api/generate-plan', authenticateToken, aiLimiters, async (req, res) =
 
         // Permanent swaps must survive into weeks generated later, or "this and future"
         // silently means "this week only" the moment the next week is built.
-        // Reuse the names already in the user's history. A model asked cold will write
-        // "Deadlift" one week and "Barbell Deadlift" the next, which splits one lift into two
-        // in every aggregate that groups by name.
-        const knownNames = await repo.getKnownExerciseNames(req.user.id);
-        const namesBlock = knownNames.length
-            ? [
-                '',
-                '',
-                'MOVEMENT NAMES ALREADY IN THIS USER\'S HISTORY:',
-                knownNames.map(n => '- ' + n).join('\n'),
-                '',
-                'When you program any of these movements, reuse the EXACT name shown above.',
-                'Do not rephrase, reorder or add equipment words to a name that already exists.',
-                'Consistent naming is what lets progress be tracked across weeks.'
-              ].join('\n')
-            : '';
+        // Anchor naming to logged history plus the week just finished, so week N+1 calls a
+        // movement what week N called it.
+        const previousWeekPlan = activeCycle
+            ? await repo.getWeekPlan(activeCycle.id, activeCycle.current_week)
+            : null;
+        const namesBlock = await buildNamesBlock(
+            req.user.id,
+            planExerciseNames(previousWeekPlan && previousWeekPlan.plan)
+        );
 
         const subs = activeCycle ? await repo.getSubstitutions(activeCycle.id) : [];
         const subsBlock = subs.length
@@ -377,7 +418,11 @@ app.post('/api/recalibrate-plan', authenticateToken, aiLimiters, async (req, res
             return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
         }
 
-        const prompt = `You are an expert AI strength and conditioning coach.
+        // The plan being adjusted is itself the strongest naming anchor: whatever the model
+        // is not asked to change should come back named exactly as it went in.
+        const namesBlock = await buildNamesBlock(req.user.id, planExerciseNames(currentPlan));
+
+        const prompt = `You are an expert AI strength and conditioning coach.${namesBlock}
 
 Here is the user's current 1-week workout plan:
 ${JSON.stringify(currentPlan, null, 2)}

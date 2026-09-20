@@ -282,6 +282,27 @@ async function getSetsForMetrics(userId) {
     return r.rows;
 }
 
+/**
+ * Distinct movement names the user has actually logged, most recent first.
+ *
+ * Fed back into generation prompts so the model reuses the name it used last week instead of
+ * inventing a new spelling. Name drift between weeks is what silently split one lift into
+ * several in the metrics.
+ */
+async function getKnownExerciseNames(userId, limit = 60) {
+    const r = await db.query(
+        `SELECT s.exercise_name, MAX(w.finished_at) AS last_seen
+           FROM workouts w
+           JOIN workout_sets s ON s.workout_id = w.id
+          WHERE w.user_id = $1
+          GROUP BY s.exercise_name
+          ORDER BY last_seen DESC
+          LIMIT $2`,
+        [userId, limit]
+    );
+    return r.rows.map(x => x.exercise_name);
+}
+
 /* ---------------------------------------------------------- journal entries */
 
 async function appendJournalEntry(userId, entry) {
@@ -315,6 +336,6 @@ module.exports = {
     getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek,
     addSubstitution, getSubstitutions,
     saveWeekPlan, getWeekPlan,
-    appendWorkout, getWorkoutHistory, getSetsForMetrics,
+    appendWorkout, getWorkoutHistory, getSetsForMetrics, getKnownExerciseNames,
     appendJournalEntry, getJournalEntries
 };

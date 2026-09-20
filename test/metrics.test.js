@@ -56,7 +56,7 @@ function set(workoutId, dateISO, name, weight, reps, extra) {
 
 (async () => {
     const pg = installPgShim();
-    const { computeMetrics, startOfWeek } = require(path.join(ROOT, 'metrics.js'));
+    const { computeMetrics, canonicalName, startOfWeek } = require(path.join(ROOT, 'metrics.js'));
 
     console.log('\n=== T3-10: empty and degenerate input ===\n');
 
@@ -163,6 +163,41 @@ function set(workoutId, dateISO, name, weight, reps, extra) {
     ], NOW);
     check('movements ordered by sessions', m.movements[0].name, 'Squat');
     check('trendable ordered the same way', m.trendable[0], 'Squat');
+
+    console.log('\n=== name drift between weeks ===\n');
+
+    // The bug that made progression look broken: a model names the same lift differently each
+    // week, so one climbing movement becomes several one-session movements and nothing charts.
+    m = computeMetrics([
+        set(1, '2026-09-08T10:00:00Z', 'Barbell Bench Press', 135, 5),
+        set(2, '2026-09-15T10:00:00Z', 'Bench Press (Barbell)', 145, 5)
+    ], NOW);
+    check('reordered name groups as one movement', m.movements.length, 1);
+    check('it becomes trendable', m.trendable.length, 1);
+    check('both sessions land on one line', m.movements[0].points.map(p => p.weight), [135, 145]);
+    check('displayed under the most recent spelling', m.movements[0].name, 'Bench Press (Barbell)');
+    check('the older spelling is surfaced, not hidden', m.movements[0].aliases, ['Barbell Bench Press']);
+
+    check('punctuation ignored', canonicalName('Bench Press (Barbell)'), canonicalName('Barbell Bench Press'));
+    check('casing ignored', canonicalName('BARBELL ROW'), canonicalName('barbell row'));
+    check('hyphenation ignored', canonicalName('Chin-Ups'), canonicalName('Chin Ups'));
+
+    // Equipment must keep movements apart. Merging these would chart 185 next to 60 and call
+    // it a collapse -- over-merging invents data, under-merging only shows less.
+    check('barbell and dumbbell stay separate',
+        canonicalName('Barbell Bench Press') === canonicalName('Dumbbell Bench Press'), false);
+    check('machine and cable stay separate',
+        canonicalName('Machine Row') === canonicalName('Cable Row'), false);
+
+    m = computeMetrics([
+        set(1, '2026-09-08T10:00:00Z', 'Barbell Bench Press', 185, 3),
+        set(2, '2026-09-15T10:00:00Z', 'Dumbbell Bench Press', 60, 10)
+    ], NOW);
+    check('equipment variants remain two movements', m.movements.length, 2);
+    check('neither becomes a false trend', m.trendable, []);
+
+    check('empty name does not throw', canonicalName(''), '');
+    check('null name does not throw', canonicalName(null), '');
 
     console.log('\n=== T3-10: the endpoint ===\n');
 

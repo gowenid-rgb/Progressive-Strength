@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept B — Rep-Range Ladder</title><link rel="stylesheet" href="shared.css">
+<style>
+.lift { margin-bottom: 12px; }
+.lift-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+.lift-name { font-size: 14px; font-weight: 600; color: #fff; }
+.lift-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.tip { position: fixed; pointer-events: none; background: var(--elevated); border: 1px solid #333; border-radius: 12px; padding: 8px 10px; font-size: 11px; line-height: 1.5; z-index: 9; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.6); }
+.tip b { color: #fff; }
+</style></head><body>
+<script src="shared.js"></script>
+<script>
+const { CYCLE, KIND, stats, delta, readyForMore, stalling } = PS;
+PS.frame('Concept B', 'Rep-range ladder',
+  'Built for double progression. Each dot is a set, the band is the target rep range. Watch dots climb to the ceiling, then the weight steps up and they drop back to the floor.');
+
+const W = 342, H = 168, padL = 26, padR = 6, padT = 26, padB = 20;
+const colW = (W - padL - padR) / CYCLE.totalWeeks;
+
+function chart(m) {
+  const [lo, hi] = m.range, yMin = lo - 2, yMax = hi + 2;
+  const y = r => padT + (1 - (r - yMin) / (yMax - yMin)) * (H - padT - padB);
+  const cx = i => padL + (i + .5) * colW;
+  let g = '';
+  g += `<rect x="${padL}" y="${y(hi + .5)}" width="${W - padL - padR}" height="${y(lo - .5) - y(hi + .5)}" rx="6" fill="rgba(255,255,255,.055)"/>`;
+  g += `<text x="${padL - 6}" y="${y(hi) + 3}" fill="#888" font-size="9" text-anchor="end">${hi}</text><text x="${padL - 6}" y="${y(lo) + 3}" fill="#888" font-size="9" text-anchor="end">${lo}</text>`;
+
+  for (let i = 0; i < CYCLE.totalWeeks; i++) {
+    const s = m.weeks[i], d = delta(m, i);
+    const label = `W${i + 1}`;
+    g += `<text x="${cx(i)}" y="${H - 5}" fill="${i === CYCLE.currentWeek - 1 ? '#fff' : '#888'}" font-size="9" text-anchor="middle">${label}</text>`;
+    if (!s) {   // upcoming deload
+      g += `<line x1="${cx(i)}" x2="${cx(i)}" y1="${y(hi + .5)}" y2="${y(lo - .5)}" stroke="#333" stroke-width="1" stroke-dasharray="2 4"/>
+            <text x="${cx(i)}" y="${padT - 10}" fill="#555" font-size="9.5" text-anchor="middle">deload</text>`;
+      continue;
+    }
+    const load = s[0][0];
+    const loadColor = d.kind === 'load' ? 'var(--load)' : '#bbb';
+    g += `<text x="${cx(i)}" y="${padT - 10}" fill="${loadColor}" font-size="10.5" font-weight="${d.kind === 'load' ? 700 : 500}" text-anchor="middle">${d.kind === 'load' ? '▲' : ''}${load}</text>`;
+    const reps = s.map(x => x[1]);
+    g += `<line x1="${cx(i)}" x2="${cx(i)}" y1="${y(Math.max(...reps))}" y2="${y(Math.min(...reps))}" stroke="#3a3a3a" stroke-width="2" stroke-linecap="round"/>`;
+    s.forEach((set, j) => {
+      const x = cx(i) + (j - (s.length - 1) / 2) * 8, r = set[1];
+      const atTop = r >= hi, below = r < lo;
+      const fill = atTop ? 'var(--reps)' : below ? 'var(--bg)' : '#d4d4d4';
+      const stroke = below ? 'var(--down)' : 'var(--bg)';
+      g += `<circle cx="${x}" cy="${y(r)}" r="${below ? 3.2 : 3.6}" fill="${fill}" stroke="${stroke}" stroke-width="${below ? 1.6 : 2}"><title>Week ${i+1}, set ${j+1}: ${load} lb × ${r}</title></circle>`;
+    });
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${m.name} reps per set across the cycle" data-m="${m.short}">${g}</svg>`;
+}
+
+const lifts = CYCLE.movements.map(m => {
+  const last = CYCLE.currentWeek - 1, s = m.weeks[last], d = delta(m, last);
+  const state = readyForMore(m, last) ? '<span class="tag go">Ready for more weight</span>'
+              : stalling(m) ? '<span class="tag warn">Stalling</span>'
+              : `<span class="tag">${KIND[d.kind].glyph} ${d.text}</span>`;
+  return `<div class="card lift"><div class="lift-head"><div><div class="lift-name">${m.name}</div>
+     <div class="lift-sub">${s[0][0]} lb now · ${m.range[0]}–${m.range[1]} reps · set order left → right</div></div>${state}</div>${chart(m)}</div>`;
+}).join('');
+
+document.getElementById('app').innerHTML = `
+  <div class="legend" style="margin:0 0 12px">
+    <span><i style="background:var(--reps);border-radius:50%"></i>Hit the top of the range</span>
+    <span><i style="background:#d4d4d4;border-radius:50%"></i>In range</span>
+    <span><i style="background:var(--bg);border:1.5px solid var(--down);border-radius:50%"></i>Below range</span>
+    <span style="color:var(--load)">▲ Weight went up</span></div>
+  ${lifts}
+  <p class="note">Why this shape: a tonnage or top-weight line cannot show a lifter “living” in the range — you only see the weight jump. Here the reps behind each weight are visible, so a week that adds one rep to one set still shows as a dot that moved up.</p>`;
+</script></body></html>

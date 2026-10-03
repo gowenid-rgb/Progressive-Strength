@@ -1,0 +1,35 @@
+/* Tokens copied from the app (public/index.html tailwind config), plus four data colours.
+   Data colours validated against the dark surface with the dataviz validator:
+   load #3987e5 / reps #199e70 / slipped #d95926 — worst all-pairs CVD ΔE 9.4, normal 20.9.
+   Hue is never the only channel: every state also has a glyph and a text label. */
+:root {
+    --bg: #000; --surface: #0a0a0a; --elevated: #141414; --border: #222;
+    --text: #ededed; --muted: #888; --faint: #555;
+    --load: #3987e5; --reps: #199e70; --down: #d95926; --hold: #5c5c5c;
+    /* deload: amber #cc9a1f. With the three above: worst CVD dE 9.0, normal-vision 15.2 (all pairs). Also carries a "D" glyph and a label. */
+    --deload: #cc9a1f;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #050505; color: var(--text); font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.proto-bar { display: flex; justify-content: space-between; align-items: center; max-width: 430px; margin: 0 auto; padding: 14px 20px 6px; font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.proto-bar a { color: var(--muted); text-decoration: none; }
+.proto-bar a:hover { color: #fff; }
+.proto-bar span { text-transform: uppercase; letter-spacing: .14em; font-weight: 600; color: var(--faint); }
+.phone { max-width: 430px; margin: 0 auto 60px; background: var(--bg); min-height: 100vh; padding: 8px 16px 40px; }
+@media (min-width: 560px) { .phone { border: 1px solid var(--border); border-radius: 36px; min-height: 0; padding: 24px 18px 40px; margin-bottom: 60px; } }
+.eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: .16em; color: var(--muted); font-weight: 600; }
+h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 6px 0 4px; color: #fff; }
+.blurb { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 0 0 18px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 16px; }
+.h-sec { font-size: 10px; text-transform: uppercase; letter-spacing: .16em; color: var(--muted); font-weight: 600; margin: 22px 0 10px; }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+.chip { flex: none; background: var(--surface); border: 1px solid var(--border); color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; padding: 8px 13px; border-radius: 999px; cursor: pointer; }
+.chip[aria-pressed="true"], .chip.on { background: #fff; color: #000; border-color: #fff; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11px; color: var(--muted); margin-top: 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.num { font-variant-numeric: tabular-nums; }
+.tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.tag.go { color: var(--reps); border-color: rgba(25,158,112,.5); }
+.tag.warn { color: var(--down); border-color: rgba(217,89,38,.5); }
+svg text { font-family: inherit; }
+.note { font-size: 11px; color: var(--muted); line-height: 1.55; margin-top: 12px; }

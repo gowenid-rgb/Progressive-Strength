@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept A — Cycle Scorecard</title><link rel="stylesheet" href="shared.css">
+<style>
+.verdict-big { font-size: 34px; font-weight: 700; letter-spacing: -.03em; color: #fff; line-height: 1.05; }
+.verdict-big small { font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+.split { display: flex; gap: 2px; height: 14px; margin: 14px 0 4px; }
+.split div { border-radius: 4px; min-width: 6px; }
+.row { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; }
+.row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.row-name { font-size: 13.5px; font-weight: 600; color: #fff; }
+.row-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.row-total { text-align: right; font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; }
+.row-total small { display: block; font-size: 10px; font-weight: 500; color: var(--muted); margin-top: 2px; }
+.strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 10px; }
+.cell { height: 34px; border-radius: 9px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; line-height: 1; border: 1px solid transparent; }
+.cell small { font-size: 8.5px; font-weight: 600; margin-top: 3px; opacity: .9; }
+.cell.sel { outline: 1.5px solid #fff; outline-offset: 2px; }
+.cell.upcoming { border: 1px dashed var(--border); color: var(--faint); }
+.wk { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; font-size: 9.5px; color: var(--muted); text-align: center; margin: 14px 0 6px; }
+.wk b { color: #fff; }
+.detail { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; font-size: 11.5px; }
+.detail div { display: flex; justify-content: space-between; padding: 3px 0; color: var(--muted); }
+.detail div span:last-child { color: var(--text); }
+.detail .range { color: var(--faint); font-size: 10.5px; padding-top: 6px; }
+</style></head><body>
+<script src="shared.js"></script>
+<script>
+const { CYCLE, KIND, stats, delta, readyForMore, stalling, pct, signPct, sign } = PS;
+PS.frame('Concept A', 'Cycle scorecard',
+  'Every lift, every week, in one grid. Each square says <em>how</em> that lift moved: more weight, more reps, held, or slipped. No picking a movement first.');
+
+let week = CYCLE.currentWeek - 1;     // 0-based; tap a week to re-read the whole grid
+let open = null;
+
+const cellColor = k => ({ load: 'rgba(57,135,229,.22)', reps: 'rgba(25,158,112,.22)', down: 'rgba(217,89,38,.22)', hold: 'rgba(92,92,92,.28)', start: 'rgba(92,92,92,.18)' }[k]);
+const cellInk   = k => ({ load: '#7db3f5', reps: '#5fd1a4', down: '#f08a5d', hold: '#9a9a9a', start: '#777' }[k]);
+
+function render() {
+  const kinds = { load: 0, reps: 0, hold: 0, down: 0 };
+  CYCLE.movements.forEach(m => { const d = delta(m, week); if (kinds[d.kind] !== undefined) kinds[d.kind]++; });
+  const total = CYCLE.movements.length, moved = kinds.load + kinds.reps;
+
+  const chips = [1,2,3,4].map(i => `<button class="chip" aria-pressed="${i === week}" data-w="${i}">Week ${i + 1}</button>`).join('');
+
+  const split = ['load','reps','hold','down'].filter(k => kinds[k]).map(k =>
+    `<div style="flex:${kinds[k]};background:${KIND[k].color}" title="${kinds[k]} ${KIND[k].label}"></div>`).join('');
+  const legend = ['load','reps','hold','down'].map(k =>
+    `<span><i style="background:${KIND[k].color}"></i>${kinds[k]} ${KIND[k].label.toLowerCase()}</span>`).join('');
+
+  const wkHead = CYCLE.phases.map((p, i) => `<div>${i === week ? '<b>' : ''}W${i + 1}${i === week ? '</b>' : ''}<br>${p.slice(0, 5)}</div>`).join('');
+
+  const rows = CYCLE.movements.map((m, mi) => {
+    const first = stats(m, 0), last = stats(m, CYCLE.currentWeek - 1);
+    const e = pct(first.e1rm, last.e1rm);
+    const cells = CYCLE.phases.map((_, i) => {
+      const d = delta(m, i);
+      if (d.kind === 'upcoming') return `<div class="cell upcoming">·</div>`;
+      const label = d.kind === 'start' ? '' : `<small>${d.kind === 'load' ? d.text : d.kind === 'reps' ? d.text.replace(' reps','').replace(' rep','') + 'r' : d.kind === 'down' ? d.text.replace(' reps','r') : ''}</small>`;
+      return `<div class="cell${i === week ? ' sel' : ''}" style="background:${cellColor(d.kind)};color:${cellInk(d.kind)}" title="Week ${i+1}: ${KIND[d.kind].label}"><span>${KIND[d.kind].glyph}</span>${label}</div>`;
+    }).join('');
+    const tags = (readyForMore(m, CYCLE.currentWeek - 1) ? '<span class="tag go">Add weight next</span> ' : '') + (stalling(m) ? '<span class="tag warn">Stalling</span>' : '');
+    const detail = open === mi ? `<div class="detail">${m.weeks.map((s, i) =>
+        `<div><span>Week ${i + 1}</span><span class="num">${s[0][0]} lb × ${s.map(x => x[1]).join(' · ')}</span></div>`).join('')}
+        <div class="range"><span>Target range ${m.range[0]}–${m.range[1]} reps</span><span></span></div></div>` : '';
+    return `<div class="row" data-m="${mi}">
+      <div class="row-top"><div><div class="row-name">${m.name}</div><div class="row-sub">${tags || m.range[0] + '–' + m.range[1] + ' rep range'}</div></div>
+      <div class="row-total num">${signPct(e)}<small>est. strength</small></div></div>
+      <div class="strip">${cells}</div>${detail}</div>`;
+  }).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div class="chips">${chips}</div>
+    <div class="card" style="margin-top:12px">
+      <div class="verdict-big num">${moved} of ${total} <small>lifts moved forward in week ${week + 1}</small></div>
+      <div class="split">${split}</div><div class="legend">${legend}</div>
+    </div>
+    <div class="h-sec">Every lift · whole cycle</div>
+    <div class="wk">${wkHead}</div>${rows}
+    <p class="note">A lift “moves forward” if any set got heavier, or if the total reps at the same weight went up — even by one rep. The percentage is the change in estimated one-rep max since week 1 (best set, Epley formula).</p>`;
+
+  document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => { week = +b.dataset.w; render(); });
+  document.querySelectorAll('.row').forEach(r => r.onclick = () => { open = open === +r.dataset.m ? null : +r.dataset.m; render(); });
+}
+render();
+</script></body></html>

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scorecard + Cycle Snapshot</title><link rel="stylesheet" href="shared.css">
+<style>
+/* prototype-only switch between the three snapshot options */
+.proto-switch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; border: 1px dashed #333; border-radius: 14px; padding: 4px; margin-bottom: 6px; }
+.proto-switch button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 11.5px; font-weight: 600; padding: 9px 4px; border-radius: 10px; cursor: pointer; }
+.proto-switch button[aria-pressed="true"] { background: #fff; color: #000; }
+.proto-cap { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); font-weight: 600; margin: 0 0 6px 2px; }
+
+/* snapshot, shared */
+.snap-eyebrow { display: flex; justify-content: space-between; font-size: 10px; text-transform: uppercase; letter-spacing: .16em; color: var(--muted); font-weight: 600; }
+.hero { display: flex; align-items: baseline; gap: 10px; margin-top: 10px; }
+.hero b { font-size: 52px; font-weight: 700; letter-spacing: -.04em; color: #fff; line-height: 1; }
+.hero span { font-size: 12px; color: var(--muted); line-height: 1.35; max-width: 150px; }
+.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+.tile { background: var(--elevated); border-radius: 14px; padding: 11px 10px; }
+.tile .l { font-size: 9px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600; }
+.tile .v { font-size: 18px; font-weight: 700; color: #fff; margin-top: 6px; letter-spacing: -.02em; }
+.tile .s { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.tl { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; margin-top: 18px; }
+.tl i { height: 6px; border-radius: 3px; background: #1f1f1f; display: block; }
+.tl i.done { background: #fff; } .tl i.now { background: #fff; }
+.tl-l { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; font-size: 9px; color: var(--muted); margin-top: 6px; text-align: center; }
+.tl-l b { color: #fff; }
+.bars { margin-top: 16px; }
+.brow { display: grid; grid-template-columns: 78px 1fr 42px; align-items: center; gap: 8px; height: 26px; }
+.brow .n { font-size: 11.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brow .t { position: relative; height: 100%; }
+.brow .bar { position: absolute; top: 7px; height: 12px; border-radius: 4px; }
+.brow .zero { position: absolute; top: 0; bottom: 0; width: 1px; background: #444; }
+.brow .avg { position: absolute; top: 2px; bottom: 2px; width: 0; border-left: 1.5px dashed #fff; opacity: .85; }
+.brow .val { font-size: 11.5px; font-weight: 600; text-align: right; color: #fff; }
+.split { display: flex; gap: 2px; height: 12px; margin-top: 12px; }
+.split div { border-radius: 4px; min-width: 4px; }
+.why { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 8px; }
+.why b { color: #fff; font-weight: 600; }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+/* scorecard (unchanged from concept A) */
+.row { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; }
+.row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.row-name { font-size: 13.5px; font-weight: 600; color: #fff; } .row-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.row-total { text-align: right; font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; }
+.row-total small { display: block; font-size: 10px; font-weight: 500; color: var(--muted); margin-top: 2px; }
+.strip { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 10px; }
+.cell { height: 34px; border-radius: 9px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; line-height: 1; border: 1px solid transparent; }
+.cell small { font-size: 8.5px; font-weight: 600; margin-top: 3px; opacity: .9; }
+.cell.sel { outline: 1.5px solid #fff; outline-offset: 2px; } .cell.upcoming { border: 1px dashed var(--border); color: var(--faint); }
+.wk { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; font-size: 9.5px; color: var(--muted); text-align: center; margin: 14px 0 6px; } .wk b { color: #fff; }
+.detail { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; font-size: 11.5px; }
+.detail div { display: flex; justify-content: space-between; padding: 3px 0; color: var(--muted); } .detail div span:last-child { color: var(--text); }
+.detail .range { color: var(--faint); font-size: 10.5px; padding-top: 6px; }
+.weekline { font-size: 12px; color: var(--muted); margin: 10px 2px 0; } .weekline b { color: #fff; }
+</style></head><body>
+<script src="shared.js"></script>
+<script>
+const { CYCLE, KIND, stats, delta, readyForMore, stalling, pct, signPct, sign } = PS;
+PS.frame('Scorecard + snapshot', 'Metrics',
+  'Concept A with the top panel replaced by one cycle-wide strength number. Three takes on that panel — switch between them below.');
+
+const last = CYCLE.currentWeek - 1;
+let variant = +(location.hash.slice(1) || 1), week = last, open = null;
+
+// ---- the aggregate -------------------------------------------------------------------
+// Per lift: estimated 1RM of the best set in week 1 vs the latest week (Epley). The cycle
+// number is the plain average of those changes, so a 35 lb dumbbell press counts the same as
+// a 195 lb squat. The change is split exactly into "from heavier weight" and "from more reps".
+const e1 = ([w, r]) => w * (1 + r / 30);
+const bestSet = (m, i) => m.weeks[i].reduce((b, x) => e1(x) > e1(b) ? x : b);
+const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+
+const lifts = CYCLE.movements.map(m => {
+  const a = bestSet(m, 0), b = bestSet(m, last), e0 = e1(a);
+  return { m, pct: (e1(b) / e0 - 1) * 100,
+           fromWeight: (b[0] - a[0]) * (1 + a[1] / 30) / e0 * 100,
+           fromReps: b[0] * (b[1] - a[1]) / 30 / e0 * 100,
+           dLoad: stats(m, last).top - stats(m, 0).top,
+           dReps: stats(m, last).reps - stats(m, 0).reps };
+});
+const agg = mean(lifts.map(l => l.pct));
+const aggWeight = mean(lifts.map(l => l.fromWeight)), aggReps = mean(lifts.map(l => l.fromReps));
+const byWeek = Array.from({ length: last + 1 }, (_, i) => mean(CYCLE.movements.map(m => pct(e1(bestSet(m, 0)), e1(bestSet(m, i))))));
+const PREV_CYCLE = [0, 2, 3.2, 4.1, 5.0, 5.6];          // SAMPLE data: the previous cycle, same shape
+const up = lifts.filter(l => l.pct > 0).length;
+const sg = n => (n >= 0 ? '+' : '−') + Math.abs(n).toFixed(n % 1 ? 1 : 0);
+
+const hero = () => `<div class="hero num"><b>${agg >= 0 ? '+' : '−'}${Math.round(Math.abs(agg))}%</b><span>estimated strength gained since week 1</span></div>`;
+
+// ---- three snapshots -------------------------------------------------------------------
+function snap1() {   // headline + where we are in the cycle + three supporting numbers
+  const tl = CYCLE.phases.map((_, i) => `<i class="${i <= last ? 'done' : ''}"></i>`).join('');
+  const tll = CYCLE.phases.map((p, i) => `<div>${i === last ? '<b>' : ''}W${i + 1}${i === last ? '</b>' : ''}</div>`).join('');
+  // Lift-weeks that moved forward (more weight or more reps) out of all lift-weeks since week 1.
+  let moved = 0, possible = 0;
+  CYCLE.movements.forEach(m => { for (let i = 1; i <= last; i++) { possible++; if (['load', 'reps'].includes(delta(m, i).kind)) moved++; } });
+  return `<div class="card">
+    <div class="snap-eyebrow"><span>Cycle strength</span><span>Week ${last + 1} of ${CYCLE.totalWeeks}</span></div>
+    ${hero()}
+    <div class="tl">${tl}</div><div class="tl-l">${tll}</div>
+    <div class="tiles">
+      <div class="tile"><div class="l">Lifts up</div><div class="v num">${up} of ${lifts.length}</div><div class="s">stronger than wk 1</div></div>
+      <div class="tile"><div class="l">Weight added</div><div class="v num">+${mean(lifts.map(l => l.dLoad)).toFixed(0)} lb</div><div class="s">avg top set</div></div>
+      <div class="tile"><div class="l">Weeks won</div><div class="v num">${moved} of ${possible}</div><div class="s">lift-weeks that moved up</div></div>
+    </div></div>`;
+}
+
+function snap2() {   // who is carrying the number: each lift's contribution on one axis
+  const sorted = [...lifts].sort((a, b) => b.pct - a.pct);
+  const hi = Math.max(5, ...sorted.map(l => l.pct)), lo = Math.min(0, ...sorted.map(l => l.pct));
+  const span = hi - lo, zero = (-lo / span) * 100, at = v => ((v - lo) / span) * 100;
+  const rows = sorted.map(l => {
+    const left = l.pct >= 0 ? zero : at(l.pct), w = Math.abs(l.pct) / span * 100;
+    return `<div class="brow"><div class="n">${l.m.short}</div>
+      <div class="t"><div class="zero" style="left:${zero}%"></div>
+        <div class="bar" style="left:${left}%;width:${w}%;background:${l.pct >= 0 ? '#d4d4d4' : 'var(--down)'}"></div>
+        <div class="avg" style="left:${at(agg)}%"></div></div>
+      <div class="val num">${signPct(l.pct)}</div></div>`;
+  }).join('');
+  return `<div class="card">
+    <div class="snap-eyebrow"><span>Cycle strength</span><span>Week ${last + 1} of ${CYCLE.totalWeeks}</span></div>
+    ${hero()}
+    <div class="bars">${rows}</div>
+    <p class="note" style="margin-bottom:0"><span style="border-left:1.5px dashed #fff;margin-right:7px"></span>Dashed line is the cycle average (${signPct(agg)}). Bars show how much each lift pulled the total up or down.</p></div>`;
+}
+
+function snap3() {   // trajectory vs last cycle + how the gain was earned
+  const W = 342, H = 150, padL = 30, padR = 12, padT = 16, padB = 22, N = CYCLE.totalWeeks;
+  const x = i => padL + (i + .5) * ((W - padL - padR) / N);
+  const hiV = Math.max(8, Math.ceil(Math.max(...byWeek, ...PREV_CYCLE) / 2) * 2), loV = 0;
+  const y = v => padT + (1 - (v - loV) / (hiV - loV)) * (H - padT - padB);
+  const path = (s) => s.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+  let g = '';
+  for (let t = 0; t <= hiV; t += 4) g += `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" stroke="${t ? '#1c1c1c' : '#444'}"/><text x="${padL - 6}" y="${y(t) + 3}" fill="#888" font-size="9" text-anchor="end">${t ? '+' + t + '%' : '0'}</text>`;
+  for (let i = 0; i < N; i++) g += `<text x="${x(i)}" y="${H - 6}" fill="${i === last ? '#fff' : '#888'}" font-size="9" text-anchor="middle">W${i + 1}</text>`;
+  g += `<path d="${path(PREV_CYCLE)}" fill="none" stroke="#666" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round"/>`;
+  g += `<path d="${path(byWeek)} L${x(last)} ${y(0)} L${x(0)} ${y(0)} Z" fill="rgba(255,255,255,.06)"/>`;
+  g += `<path d="${path(byWeek)}" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  g += `<circle cx="${x(last)}" cy="${y(byWeek[last])}" r="4.5" fill="#fff" stroke="var(--surface)" stroke-width="2"/>`;
+  g += `<text x="${x(N - 1)}" y="${y(0) - 8}" fill="#555" font-size="9" text-anchor="middle">deload</text>`;
+  const wShare = Math.max(aggWeight, 0), rShare = Math.max(aggReps, 0);
+  return `<div class="card">
+    <div class="snap-eyebrow"><span>Cycle strength</span><span>Week ${last + 1} of ${CYCLE.totalWeeks}</span></div>
+    ${hero()}
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="margin-top:8px" role="img" aria-label="Average strength gain by week compared with the previous cycle">${g}</svg>
+    <div class="legend" style="margin-top:4px"><span><i style="background:#fff;height:3px;margin-top:3px"></i>This cycle</span><span><i style="background:none;border-top:2px dashed #666;height:0;border-radius:0;margin-top:4px"></i>Last cycle <em style="font-style:normal;color:var(--faint)">(sample)</em></span></div>
+    <div class="h-sec" style="margin:18px 0 0">Where the gain came from</div>
+    <div class="split"><div style="flex:${wShare};background:var(--load)"></div><div style="flex:${rShare};background:var(--reps)"></div></div>
+    <div class="why"><span><i class="sw" style="background:var(--load)"></i>Heavier weight <b class="num">${sg(aggWeight)}%</b></span><span><i class="sw" style="background:var(--reps)"></i>More reps <b class="num">${sg(aggReps)}%</b></span></div>${aggReps < 0 ? '<p class="note" style="margin:8px 0 0">Heavier weights cost a few reps, which is normal when you move up. Net gain is still ' + signPct(agg) + '.</p>' : ''}</div>`;
+}
+
+// ---- scorecard below (as in concept A) -------------------------------------------------
+const cellColor = k => ({ load: 'rgba(57,135,229,.22)', reps: 'rgba(25,158,112,.22)', down: 'rgba(217,89,38,.22)', hold: 'rgba(92,92,92,.28)', start: 'rgba(92,92,92,.18)' }[k]);
+const cellInk   = k => ({ load: '#7db3f5', reps: '#5fd1a4', down: '#f08a5d', hold: '#9a9a9a', start: '#777' }[k]);
+
+function render() {
+  const snap = [snap1, snap2, snap3][variant - 1]();
+  const moved = CYCLE.movements.filter(m => ['load', 'reps'].includes(delta(m, week).kind)).length;
+  const chips = [1, 2, 3, 4].map(i => `<button class="chip" aria-pressed="${i === week}" data-w="${i}">Week ${i + 1}</button>`).join('');
+  const wkHead = CYCLE.phases.map((p, i) => `<div>${i === week ? '<b>' : ''}W${i + 1}${i === week ? '</b>' : ''}<br>${p.slice(0, 5)}</div>`).join('');
+
+  const rows = CYCLE.movements.map((m, mi) => {
+    const first = stats(m, 0), lastS = stats(m, last), e = pct(first.e1rm, lastS.e1rm);
+    const cells = CYCLE.phases.map((_, i) => {
+      const d = delta(m, i);
+      if (d.kind === 'upcoming') return `<div class="cell upcoming">·</div>`;
+      const label = d.kind === 'start' ? '' : `<small>${d.kind === 'load' ? d.text : d.kind === 'reps' ? d.text.replace(' reps', '').replace(' rep', '') + 'r' : d.kind === 'down' ? d.text.replace(' reps', 'r') : ''}</small>`;
+      return `<div class="cell${i === week ? ' sel' : ''}" style="background:${cellColor(d.kind)};color:${cellInk(d.kind)}" title="Week ${i + 1}: ${KIND[d.kind].label}"><span>${KIND[d.kind].glyph}</span>${label}</div>`;
+    }).join('');
+    const tags = (readyForMore(m, last) ? '<span class="tag go">Add weight next</span> ' : '') + (stalling(m) ? '<span class="tag warn">Stalling</span>' : '');
+    const detail = open === mi ? `<div class="detail">${m.weeks.map((s, i) => `<div><span>Week ${i + 1}</span><span class="num">${s[0][0]} lb × ${s.map(x => x[1]).join(' · ')}</span></div>`).join('')}<div class="range"><span>Target range ${m.range[0]}–${m.range[1]} reps</span><span></span></div></div>` : '';
+    return `<div class="row" data-m="${mi}"><div class="row-top"><div><div class="row-name">${m.name}</div><div class="row-sub">${tags || m.range[0] + '–' + m.range[1] + ' rep range'}</div></div>
+      <div class="row-total num">${signPct(e)}<small>est. strength</small></div></div><div class="strip">${cells}</div>${detail}</div>`;
+  }).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div class="proto-cap">Prototype · top panel options</div>
+    <div class="proto-switch">${['1 · Scoreboard', '2 · By lift', '3 · Trajectory'].map((t, i) => `<button aria-pressed="${variant === i + 1}" data-v="${i + 1}">${t}</button>`).join('')}</div>
+    <div style="margin-top:10px">${snap}</div>
+    <div class="h-sec">Every lift · whole cycle</div>
+    <div class="chips">${chips}</div>
+    <div class="weekline"><b class="num">${moved} of ${CYCLE.movements.length}</b> lifts moved forward in week ${week + 1}</div>
+    <div class="wk">${wkHead}</div>${rows}
+    <p class="note">The cycle number is the average change in estimated one-rep max (best set, Epley) across your lifts since week 1, each lift counted equally.</p>`;
+
+  document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { variant = +b.dataset.v; history.replaceState(null, '', '#' + variant); render(); });
+  document.querySelectorAll('[data-w]').forEach(b => b.onclick = () => { week = +b.dataset.w; render(); });
+  document.querySelectorAll('.row').forEach(r => r.onclick = () => { open = open === +r.dataset.m ? null : +r.dataset.m; render(); });
+}
+render();
+</script></body></html>

@@ -115,6 +115,22 @@ async function setCycleLength(cycleId, totalWeeks) {
     return r.rows[0] || null;
 }
 
+/**
+ * Records the lifter's correction to how one movement is tracked in this cycle.
+ * mode: 'progress' | 'consistency', or null to remove the correction and fall back to the
+ * programme's role. Keyed by canonical name so a re-spelled movement keeps its setting.
+ */
+async function setTrackingOverride(cycleId, key, mode) {
+    const r = mode === null
+        ? await db.query(
+            `UPDATE cycles SET tracking_overrides = COALESCE(tracking_overrides, '{}'::jsonb) - $2::text
+              WHERE id = $1 AND status = 'active' RETURNING *`, [cycleId, key])
+        : await db.query(
+            `UPDATE cycles SET tracking_overrides = COALESCE(tracking_overrides, '{}'::jsonb) || $2::jsonb
+              WHERE id = $1 AND status = 'active' RETURNING *`, [cycleId, JSON.stringify({ [key]: mode })]);
+    return r.rows[0] || null;
+}
+
 async function setCycleProgram(cycleId, program) {
     const r = await db.query(
         `UPDATE cycles SET program = $2 WHERE id = $1 AND status = 'active' RETURNING *`,
@@ -377,7 +393,7 @@ async function getJournalEntries(userId, limit = 20) {
 
 module.exports = {
     getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek, setCycleLength,
-    setCycleProgram, getPreviousCycles,
+    setCycleProgram, setTrackingOverride, getPreviousCycles,
     addSubstitution, getSubstitutions,
     saveWeekPlan, getWeekPlan,
     appendWorkout, getWorkoutHistory, getSetsForMetrics, getKnownExerciseNames,

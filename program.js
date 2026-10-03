@@ -24,6 +24,44 @@ function parseRepRange(reps) {
     return null; // time-based, AMRAP, or anything else we should not do maths on
 }
 
+/* -------------------------------------------------------------------- roles */
+
+// What a movement is FOR decides how it is judged. A warm-up repeated identically every week is
+// doing its job; calling it "stalled" is noise. Conditioning is parked here too until time and
+// distance can be logged — it is not a lift and an arrow on reps would be meaningless.
+const ROLES = ['warmup', 'main', 'accessory', 'core', 'conditioning'];
+
+/**
+ * Maps whatever role text a model (or an older programme) produced onto the fixed list.
+ * Older programmes stored free text such as "Warm-up" or "primary", which a strict equality
+ * check silently missed.
+ */
+function normaliseRole(role) {
+    const text = String(role === null || role === undefined ? '' : role).toLowerCase();
+    if (ROLES.includes(text)) return text;
+    if (/warm|mobil|activat|prehab|stretch|primer/.test(text)) return 'warmup';
+    if (/cardio|conditioning|finisher|hiit|metcon|aerobic/.test(text)) return 'conditioning';
+    if (/\bcore\b|\babs?\b|trunk/.test(text)) return 'core';
+    if (/main|primary|compound/.test(text)) return 'main';
+    return 'accessory';
+}
+
+/** 'progress' movements get arrows and flags; 'consistency' ones only record that they were done. */
+function trackingModeFor(role) {
+    const r = normaliseRole(role);
+    return r === 'warmup' || r === 'conditioning' ? 'consistency' : 'progress';
+}
+
+/** Rewrites every exercise's role onto the fixed list. Run once, when a programme is stored. */
+function normaliseRoles(p) {
+    if (p && Array.isArray(p.days)) {
+        p.days.forEach(d => (Array.isArray(d.exercises) ? d.exercises : []).forEach(e => {
+            if (e) e.role = normaliseRole(e.role);
+        }));
+    }
+    return p;
+}
+
 /* -------------------------------------------------------------- progression */
 
 // Upper-body lifts move in smaller jumps than lower-body ones. A 10 lb week-on-week jump on a
@@ -164,7 +202,7 @@ function renderWeek(program, weekNumber, history) {
                     reps: ex.repRange || ex.reps || '8-10'
                 };
                 // Warmups and mobility carry no load, and a suggested weight on them is noise.
-                if (ex.role !== 'warmup' && suggestedWeight) out.suggestedWeight = suggestedWeight;
+                if (normaliseRole(ex.role) !== 'warmup' && suggestedWeight) out.suggestedWeight = suggestedWeight;
                 if (reason) out.progressionNote = reason;
                 return out;
             })
@@ -201,7 +239,7 @@ const PROGRAM_SCHEMA = {
                             type: 'object',
                             properties: {
                                 name: { type: 'string' },
-                                role: { type: 'string' },
+                                role: { type: 'string', enum: ROLES },
                                 repRange: { type: 'string' },
                                 baseSets: { type: 'integer' }
                             },
@@ -270,5 +308,6 @@ function programExerciseNames(program) {
 
 module.exports = {
     renderWeek, prescribeWeight, lastSessionFor, parseRepRange, incrementFor,
-    weekSpecFor, validateProgram, programExerciseNames, PROGRAM_SCHEMA
+    weekSpecFor, validateProgram, programExerciseNames, PROGRAM_SCHEMA,
+    ROLES, normaliseRole, normaliseRoles, trackingModeFor
 };

@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cycle snapshot — any length</title><link rel="stylesheet" href="shared.css">
+<style>
+.proto-cap { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); font-weight: 600; margin: 0 0 6px 2px; }
+.proto-chips { border: 1px dashed #333; border-radius: 14px; padding: 6px; margin-bottom: 14px; }
+
+/* snapshot panel */
+.snap-eyebrow { display: flex; justify-content: space-between; font-size: 10px; text-transform: uppercase; letter-spacing: .16em; color: var(--muted); font-weight: 600; }
+.hero { display: flex; align-items: baseline; gap: 10px; margin-top: 10px; }
+.hero b { font-size: 52px; font-weight: 700; letter-spacing: -.04em; color: #fff; line-height: 1; }
+.hero span { font-size: 12px; color: var(--muted); line-height: 1.35; max-width: 150px; }
+.split { display: flex; gap: 2px; height: 12px; margin-top: 12px; }
+.split div { border-radius: 4px; min-width: 4px; }
+.why { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 8px; gap: 8px; }
+.why b { color: #fff; font-weight: 600; }
+.sw { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.empty { font-size: 13px; color: var(--muted); line-height: 1.55; margin-top: 12px; }
+.empty b { color: #fff; font-weight: 600; }
+
+/* scorecard grid: columns = cycle length, so every size fits the same width */
+.grid { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: var(--gap, 4px); }
+.band { margin: 14px 0 0; }
+.band div { height: 18px; border-radius: 6px; font-size: 9px; font-weight: 600; letter-spacing: .04em; color: #bbb; display: flex; align-items: center; justify-content: center; white-space: nowrap; overflow: hidden; }
+.band .p-base { background: #1a1a1a; } .band .p-build { background: #242424; } .band .p-peak { background: #2e2e2e; color: #ddd; } .band .p-deload { background: rgba(204,154,31,.12); border: 1px dashed rgba(204,154,31,.55); color: var(--deload); }
+.wkhead { margin: 5px 0 8px; font-size: 9.5px; color: var(--muted); text-align: center; }
+.wkhead b { color: #fff; }
+.row { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; }
+.row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.row-name { font-size: 13.5px; font-weight: 600; color: #fff; }
+.row-sub { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.row-total { text-align: right; font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; }
+.row-total small { display: block; font-size: 10px; font-weight: 500; color: var(--muted); margin-top: 2px; }
+.cell { height: 34px; border-radius: 9px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; line-height: 1; border: 1px solid transparent; min-width: 0; }
+.cell small { font-size: 8.5px; font-weight: 600; margin-top: 3px; opacity: .9; white-space: nowrap; }
+.dense .cell { height: 28px; border-radius: 7px; font-size: 11px; }
+.dense.tiny .cell { border-radius: 6px; }
+.cell.upcoming { border: 1px dashed var(--border); color: var(--faint); }
+.cell.deload { background: rgba(204,154,31,.16); color: #e0b341; border: 1px solid rgba(204,154,31,.45); }
+.cell.missed { border: 1px dashed #3a3a3a; color: var(--faint); background: transparent; }
+.detail { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; font-size: 11.5px; }
+.detail div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; color: var(--muted); }
+.detail div span:last-child { color: var(--text); text-align: right; }
+.detail .range { color: var(--faint); font-size: 10.5px; padding-top: 6px; }
+.group { background: #060606; border: 1px dashed #2c2c2c; border-radius: 18px; padding: 12px 14px; margin: 14px 0 8px; cursor: pointer; }
+.group .row-name { color: #cfcfcf; }
+.group .stripe { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.035) 0 5px, transparent 5px 10px); }
+.mini { height: 14px; border-radius: 4px; background: #171717; }
+.mini.on { background: #3a3a3a; } .mini.part { background: #262626; } .mini.up { border: 1px dashed #2c2c2c; background: transparent; }
+.tick { height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: #1d1d1d; color: #8a8a8a; }
+.tick.miss { background: transparent; border: 1px dashed #3a3a3a; color: var(--faint); }
+.tick.up { background: transparent; border: 1px dashed #222; color: #333; }
+.mv { padding-top: 12px; margin-top: 12px; border-top: 1px solid #1c1c1c; }
+.mv .nm { font-size: 12.5px; color: #cfcfcf; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
+.tag.shade { color: #9a9a9a; border-color: #333; background: #101010; }
+.keyline { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 10.5px; color: var(--muted); margin: 4px 2px 12px; }
+.keyline span b { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 5px; font-size: 10px; margin-right: 6px; vertical-align: -3px; }
+</style></head><body>
+<script src="shared.js"></script>
+<script src="fixtures.js"></script>
+<script>
+const { KIND } = PS;
+PS.frame('Cycle snapshot', 'Metrics',
+  'Trajectory panel over the scorecard, drawn from the real <code>computeCycleSnapshot</code> output. Use the switch to try other cycle lengths.');
+
+const fmtPct = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(Math.abs(v) < 10 && v % 1 ? 1 : 0) + '%';
+const fmtN = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+let idx = Math.max(0, SNAPSHOTS.findIndex(s => s.key === location.hash.slice(1))), open = null, groupOpen = false;
+
+/* ------------------------------------------------------------ trajectory panel */
+function niceTicks(lo, hi) {
+  const steps = [1, 2, 5, 10, 20, 50];
+  const step = steps.find(s => (hi - lo) / s <= 4) || 50;
+  const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step;
+  const t = []; for (let v = a; v <= b + 1e-9; v += step) t.push(v);
+  return t;
+}
+
+function panel(s) {
+  const N = s.totalWeeks, L = s.loggedThrough, sum = s.summary, prev = s.previous;
+  const head = `<div class="snap-eyebrow"><span>Cycle strength</span><span>Week ${L} of ${N}</span></div>`;
+
+  if (sum.strengthPct === null) {
+    return `<div class="card">${head}
+      <div class="hero num"><b style="font-size:30px;color:var(--muted);letter-spacing:-.02em">Not yet</b><span>estimated strength gained since week 1</span></div>
+      <p class="empty">Log a second week of training and your first strength change shows up here.
+        ${prev ? `<br><br>Last cycle finished <b>${fmtPct(prev.strengthPct)}</b>.` : ''}</p></div>`;
+  }
+
+  const W = 342, H = 160, padL = 34, padR = 12, padT = 12, padB = 22;
+  const cur = sum.byWeek.map((v, i) => v === null ? null : { i, v, d: s.phases[i].key === 'deload' }).filter(Boolean);
+  const work = cur.filter(p => !p.d), dls = cur.filter(p => p.d);
+  const prevPts = prev ? prev.byWeek.map((v, k) => v === null ? null : { f: (k + .5) / prev.totalWeeks, v }).filter(Boolean) : [];
+  const all = cur.map(p => p.v).concat(prevPts.map(p => p.v), [0, 4]);
+  const ticks = niceTicks(Math.min(...all), Math.max(...all));
+  const lo = ticks[0], hi = ticks[ticks.length - 1];
+  const y = v => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+  const inner = W - padL - padR;
+  const x = i => padL + (i + .5) / N * inner;
+  const line = pts => pts.map((p, k) => (k ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+
+  let g = '';
+  for (const t of ticks) g += `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? '#444' : '#1c1c1c'}"/><text x="${padL - 6}" y="${y(t) + 3}" fill="#888" font-size="9" text-anchor="end">${t > 0 ? '+' + t + '%' : t < 0 ? '−' + Math.abs(t) + '%' : '0'}</text>`;
+  const every = N <= 8 ? 1 : 2;
+  for (let i = 0; i < N; i++) if (i % every === 0)
+    g += `<text x="${x(i)}" y="${H - 6}" fill="${i + 1 === L ? '#fff' : '#888'}" font-size="9" text-anchor="middle" font-weight="${i + 1 === L ? 700 : 400}">${N <= 8 ? 'W' : ''}${i + 1}</text>`;
+
+  // Deload weeks get their own band so a dip there reads as the plan working, not as losing strength.
+  for (let i = 0; i < N; i++) if (s.phases[i].key === 'deload') {
+    const logged = i + 1 <= L;
+    g += `<rect x="${x(i) - inner / N / 2}" y="${padT}" width="${inner / N}" height="${H - padT - padB}" fill="rgba(204,154,31,${logged ? .13 : .06})"/>`;
+    g += `<text x="${x(i)}" y="${padT + 9}" fill="var(--deload)" font-size="8.5" font-weight="600" text-anchor="middle" opacity="${logged ? 1 : .7}">${N <= 8 ? 'DELOAD' : 'DL'}</text>`;
+  }
+  if (prevPts.length) g += `<path d="${line(prevPts.map(p => [padL + p.f * inner, y(p.v)]))}" fill="none" stroke="#666" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round"/>`;
+  const pts = work.map(p => [x(p.i), y(p.v)]);
+  g += `<path d="${line(pts)} L${pts[pts.length - 1][0]} ${y(Math.max(lo, 0))} L${pts[0][0]} ${y(Math.max(lo, 0))} Z" fill="rgba(255,255,255,.06)"/>`;
+  g += `<path d="${line(pts)}" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  if (N <= 8) pts.slice(0, -1).forEach(p => { g += `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="#fff" stroke="var(--surface)" stroke-width="2"/>`; });
+  const e = pts[pts.length - 1];
+  g += `<circle cx="${e[0]}" cy="${e[1]}" r="4.5" fill="#fff" stroke="var(--surface)" stroke-width="2"/>`;
+  // Logged deload: a dashed amber step down from the last working week, ending in an amber point.
+  dls.forEach(p => {
+    g += `<path d="M${e[0]} ${e[1]} L${x(p.i)} ${y(p.v)}" fill="none" stroke="var(--deload)" stroke-width="2" stroke-dasharray="3 3" stroke-linecap="round"/>`;
+    g += `<circle cx="${x(p.i)}" cy="${y(p.v)}" r="4.5" fill="var(--deload)" stroke="var(--surface)" stroke-width="2"/>`;
+  });
+
+  const wShare = Math.max(sum.fromWeightPct, 0), rShare = Math.max(sum.fromRepsPct, 0);
+  const note = sum.fromRepsPct < 0 ? `<p class="note" style="margin:8px 0 0">Heavier weights cost a few reps, which is normal when you move up. Net gain is still ${fmtPct(sum.strengthPct)}.</p>` : '';
+  return `<div class="card">${head}
+    <div class="hero num"><b>${fmtPct(Math.round(sum.strengthPct)).replace(/^([+−])0%$/, '0%')}</b><span>estimated strength gained since week 1</span></div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="margin-top:8px" role="img" aria-label="Average strength gain by week${prev ? ', compared with the previous cycle' : ''}">${g}</svg>
+    <div class="legend" style="margin-top:4px"><span><i style="background:#fff;height:3px;margin-top:3px"></i>This cycle</span>${prev ? `<span><i style="background:none;border-top:2px dashed #666;height:0;border-radius:0;margin-top:4px"></i>Last cycle · ${prev.totalWeeks} wk</span>` : ''}${dls.length ? '<span><i style="background:var(--deload);border-radius:50%"></i>Deload week · lighter on purpose</span>' : ''}</div>
+    <div class="h-sec" style="margin:18px 0 0">Where the gain came from</div>
+    <div class="split"><div style="flex:${wShare || .001};background:var(--load)"></div><div style="flex:${rShare || .001};background:var(--reps)"></div></div>
+    <div class="why"><span><i class="sw" style="background:var(--load)"></i>Heavier weight <b class="num">${fmtPct(sum.fromWeightPct)}</b></span><span><i class="sw" style="background:var(--reps)"></i>More reps <b class="num">${fmtPct(sum.fromRepsPct)}</b></span></div>${note}</div>`;
+}
+
+/* ------------------------------------------------------------------ scorecard */
+const cellColor = k => ({ load: 'rgba(57,135,229,.22)', reps: 'rgba(25,158,112,.22)', down: 'rgba(217,89,38,.22)', hold: 'rgba(92,92,92,.28)', start: 'rgba(92,92,92,.18)' }[k]);
+const cellInk   = k => ({ load: '#7db3f5', reps: '#5fd1a4', down: '#f08a5d', hold: '#9a9a9a', start: '#777' }[k]);
+
+function phaseBand(s) {
+  const N = s.totalWeeks, colPx = N <= 6 ? 58 : N <= 8 ? 44 : 27;
+  const runs = [];
+  s.phases.forEach(p => { const r = runs[runs.length - 1]; if (r && r.key === p.key) r.span++; else runs.push({ key: p.key, label: p.label, span: 1 }); });
+  return runs.map(r => {
+    const fits = r.span * colPx >= r.label.length * 6.4 + 10;
+    return `<div class="p-${r.key}" style="grid-column: span ${r.span}" title="${r.label}">${fits ? r.label : r.label[0]}</div>`;
+  }).join('');
+}
+
+function cellHtml(s, m, i) {
+  const N = s.totalWeeks, w = m.weeks[i];
+  if (!w) return i + 1 <= s.loggedThrough
+    ? `<div class="cell missed" title="Week ${i + 1}: not logged">–</div>`
+    : `<div class="cell upcoming">·</div>`;
+  const d = w.delta, k = d.kind;
+  if (w.deload) return `<div class="cell deload" title="Week ${i + 1}: deload week (${w.top === null ? w.reps + ' reps' : w.top + ' lb'})"><span>D</span>${N <= 8 ? '<small>deload</small>' : ''}</div>`;
+  let label = '';
+  if (N <= 8) label = k === 'load' ? '+' + d.amount + ' lb' : k === 'reps' ? '+' + d.amount + 'r' : k === 'down' ? (d.unit === 'lb' ? d.amount + ' lb' : d.amount + 'r') : '';
+  const tip = `Week ${i + 1}: ${KIND[k].label}${k === 'load' ? ' +' + d.amount + ' lb' : k === 'reps' ? ' +' + d.amount + ' reps' : k === 'down' ? ' ' + d.amount : ''}`;
+  return `<div class="cell" style="background:${cellColor(k)};color:${cellInk(k)}" title="${tip}"><span>${KIND[k].glyph}</span>${label ? `<small>${label}</small>` : ''}</div>`;
+}
+
+function setsText(w) {
+  const ws = [...new Set(w.sets.map(x => x.weight))];
+  if (ws.length === 1) return `${ws[0] === null ? 'BW' : ws[0] + ' lb'} × ${w.sets.map(x => x.reps).join(' · ')}`;
+  return w.sets.map(x => `${x.weight === null ? 'BW' : x.weight}×${x.reps}`).join(' · ');
+}
+
+function row(s, m, mi) {
+  const N = s.totalWeeks, working = m.weeks.filter(w => w && !w.deload);
+  const first = (working.length ? working : m.weeks.filter(Boolean))[0], last = (working.length ? working : m.weeks.filter(Boolean)).slice(-1)[0];
+  let total, sub;
+  if (m.tracked) { total = `${fmtPct(m.changePct)}<small>est. strength</small>`; }
+  else if (first !== last) { const d = last.reps - first.reps; total = `${fmtN(d)} reps<small>vs week ${first.week}</small>`; }
+  else total = `<small>first week</small>`;
+  const tags = (m.readyForMore ? '<span class="tag go">Add weight next</span> ' : '') + (m.stalling ? '<span class="tag warn">Stalling</span>' : '');
+  sub = tags || (m.range ? `${m.range.min}–${m.range.max} rep range` : (m.tracked ? '' : 'Bodyweight'));
+  const detail = open === m.name ? `<div class="detail">${m.weeks.filter(Boolean).map(w => `<div><span>Week ${w.week}</span><span class="num">${setsText(w)}</span></div>`).join('')}${m.range ? `<div class="range"><span>Target range ${m.range.min}–${m.range.max} reps</span><span></span></div>` : ''}</div>` : '';
+  return `<div class="row" data-m="${esc(m.name)}"><div class="row-top"><div><div class="row-name">${esc(m.name)}</div><div class="row-sub">${sub}</div></div><div class="row-total num">${total}</div></div>
+    <div class="grid${N > 8 ? ' dense' : ''}${N > 10 ? ' tiny' : ''}" style="--n:${N};--gap:${N > 10 ? 3 : N > 8 ? 3 : 4}px">${m.weeks.map((_, i) => cellHtml(s, m, i)).join('')}</div>${detail}</div>`;
+}
+
+/* Movements that are not judged on progress: collapsed, shaded, and counted only for "was it done". */
+function untrackedGroup(s) {
+  const qs = s.movements.filter(m => m.mode === 'consistency');
+  if (!qs.length) return '';
+  const N = s.totalWeeks, L = s.loggedThrough, u = s.summary.untracked;
+  const allWarm = qs.every(m => m.role === 'warmup' && m.modeSource === 'role');
+  const title = allWarm ? 'Warm-up' : 'Not tracked';
+  const gap = N > 8 ? 3 : 4;
+  // One strip for the whole group: a week is solid when every movement was done, dim when only some were.
+  const mini = Array.from({ length: N }, (_, i) => {
+    if (i + 1 > L) return '<div class="mini up"></div>';
+    const done = qs.filter(m => m.weeks[i]).length;
+    return `<div class="mini ${done === qs.length ? 'on' : done ? 'part' : ''}" title="Week ${i + 1}: ${done} of ${qs.length} done"></div>`;
+  }).join('');
+  const body = groupOpen ? qs.map(m => {
+    const first = m.weeks.findIndex(Boolean);
+    const ticks = m.weeks.map((w, i) => w ? '<div class="tick" title="Week ' + (i + 1) + ': done">✓</div>'
+      : i + 1 <= L && i >= first ? '<div class="tick miss" title="Week ' + (i + 1) + ': not done">–</div>' : '<div class="tick up"></div>').join('');
+    const why = m.modeSource === 'override' ? 'Turned off by you' : (m.role === 'warmup' ? 'Warm-up' : m.role);
+    return `<div class="mv"><div class="nm"><span>${esc(m.name)}</span><span class="tag shade">${esc(why)}</span></div>
+      <div class="grid${N > 8 ? ' dense' : ''}" style="--n:${N};--gap:${gap}px">${ticks}</div></div>`;
+  }).join('') : '';
+  return `<div class="group">
+    <div class="row-top" style="margin-bottom:10px"><div><div class="row-name">${title}</div><div class="row-sub">${qs.length} movement${qs.length === 1 ? '' : 's'} · not tracked for progress</div></div>
+      <div class="row-total num">${u.weeksDone} of ${u.weeksPossible}<small>sessions done</small></div></div>
+    <div class="grid stripe" style="--n:${N};--gap:${gap}px;border-radius:6px">${mini}</div>${body}</div>`;
+}
+
+function render() {
+  const sc = SNAPSHOTS[idx], s = sc.snapshot, N = s.totalWeeks;
+  const gap = N > 8 ? 3 : 4;
+  const heads = Array.from({ length: N }, (_, i) => `<div>${i + 1 === s.loggedThrough ? '<b>' : ''}${N <= 8 ? 'W' : ''}${i + 1}${i + 1 === s.loggedThrough ? '</b>' : ''}</div>`).join('');
+  document.getElementById('app').innerHTML = `
+    <div class="proto-cap">Prototype · cycle length</div>
+    <div class="chips proto-chips">${SNAPSHOTS.map((x, i) => `<button class="chip" aria-pressed="${i === idx}" data-i="${i}">${x.label}</button>`).join('')}</div>
+    ${panel(s)}
+    <div class="h-sec">Every lift · whole cycle</div>
+    <div class="keyline">${['load', 'reps', 'hold', 'down'].map(k => `<span><b style="background:${cellColor(k)};color:${cellInk(k)}">${KIND[k].glyph}</b>${KIND[k].label}</span>`).join('')}<span><b style="background:rgba(204,154,31,.16);color:#e0b341;border:1px solid rgba(204,154,31,.45)">D</b>Deload week</span></div>
+    <div class="grid band" style="--n:${N};--gap:${gap}px;padding:0 15px">${phaseBand(s)}</div>
+    <div class="grid wkhead" style="--n:${N};--gap:${gap}px;padding:0 15px">${heads}</div>
+    ${s.movements.filter(m => m.mode === 'progress').map((m, mi) => row(s, m, mi)).join('')}
+    ${untrackedGroup(s)}
+    <p class="note">Strength is the average change in estimated one-rep max (best set, Epley) across your lifts, each counted equally. Bodyweight work is shown by reps and left out of that number. Tap a lift for its sets. Simulated lifter, run through the real <code>computeCycleSnapshot</code>.</p>`;
+  document.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { idx = +b.dataset.i; open = null; groupOpen = false; history.replaceState(null, '', '#' + SNAPSHOTS[idx].key); render(); });
+  document.querySelectorAll('.row').forEach(r => r.onclick = () => { open = open === r.dataset.m ? null : r.dataset.m; render(); });
+  document.querySelectorAll('.group').forEach(r => r.onclick = () => { groupOpen = !groupOpen; render(); });
+}
+render();
+</script></body></html>

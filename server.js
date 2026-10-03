@@ -9,7 +9,8 @@ const {
 const db = require('./db');
 const repo = require('./repo');
 const cycles = require('./cycles');
-const { computeMetrics } = require('./metrics');
+const { computeMetrics, canonicalName } = require('./metrics');
+const { computeCycleSnapshot } = require('./cycleSnapshot');
 const program = require('./program');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
@@ -218,8 +219,16 @@ async function buildNamesBlock(userId, extraNames) {
 // your bench had done since March.
 app.get('/api/metrics', authenticateToken, async (req, res) => {
     try {
-        const rows = await repo.getSetsForMetrics(req.user.id);
-        res.json(computeMetrics(rows, new Date()));
+        const [rows, cycle, previous] = await Promise.all([
+            repo.getSetsForMetrics(req.user.id),
+            repo.getActiveCycle(req.user.id),
+            repo.getPreviousCycles(req.user.id, 1)
+        ]);
+        const out = computeMetrics(rows, new Date());
+        // The scorecard's data: the active cycle week by week, plus the previous cycle for
+        // the comparison line. Additive; the fields above are unchanged.
+        out.cycle = computeCycleSnapshot(rows, cycle, { previousCycle: previous[0] || null });
+        res.json(out);
     } catch (err) {
         console.error('Metrics failed:', err);
         res.status(500).json({ error: 'Failed to compute metrics' });
@@ -359,7 +368,10 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
             '   setAdjustment to shape volume across the cycle (negative for a deload).',
             '5. The deload week must genuinely reduce work, not just say so.',
             '6. In "rationale", explain in two or three sentences why this programme, referring to',
-            '   the previous cycle and journal where relevant. The lifter reads this.'
+            '   the previous cycle and journal where relevant. The lifter reads this.',
+            '7. Give every movement a "role": warmup (mobility, activation, anything done to prepare',
+            '   rather than to progress), main (the primary compound lifts), accessory, core, or',
+            '   conditioning (cardio, intervals, sled work). Warm-ups are not progressed week to week.'
         ].join('\n');
 
         const designed = await generateJSON({
@@ -370,6 +382,7 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
         });
 
         designed.totalWeeks = totalWeeks;
+        program.normaliseRoles(designed);
 
         // Retire any previous cycle and start this one, so the programme and the cycle it
         // belongs to are created together rather than drifting apart.
@@ -402,6 +415,30 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
     } catch (error) {
         console.error('Error generating programme:', error);
         res.status(500).json({ error: error.message || 'Failed to design the programme' });
+    }
+});
+
+// Sets whether one movement is judged on progress in the active cycle. The programme assigns
+// a default from the movement's role (warm-ups are not progressed); this is the lifter's
+// correction to it. mode: "progress" | "consistency" | null (back to the programme's default).
+app.post('/api/cycle/tracking', authenticateToken, async (req, res) => {
+    try {
+        const name = String((req.body && req.body.name) || '').trim();
+        const mode = req.body ? req.body.mode : undefined;
+        if (!name) return res.status(400).json({ error: 'A movement name is required' });
+        if (mode !== null && mode !== 'progress' && mode !== 'consistency') {
+            return res.status(400).json({ error: 'mode must be "progress", "consistency" or null' });
+        }
+        const cycle = await repo.getActiveCycle(req.user.id);
+        if (!cycle) return res.status(400).json({ error: 'No active cycle' });
+
+        const key = canonicalName(name) || name.toLowerCase();
+        const updated = await repo.setTrackingOverride(cycle.id, key, mode);
+        if (!updated) return res.status(500).json({ error: 'Could not update tracking' });
+        res.json({ trackingOverrides: updated.tracking_overrides || {} });
+    } catch (error) {
+        console.error('Error setting tracking:', error);
+        res.status(500).json({ error: 'Failed to update tracking' });
     }
 });
 

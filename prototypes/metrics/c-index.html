@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concept C — Progress Index</title><link rel="stylesheet" href="shared.css">
+<style>
+.hero { display: flex; align-items: baseline; gap: 10px; }
+.hero b { font-size: 40px; font-weight: 700; letter-spacing: -.03em; color: #fff; }
+.hero span { font-size: 12px; color: var(--muted); }
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 4px; margin-bottom: 12px; }
+.seg button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 11.5px; font-weight: 600; padding: 9px 4px; border-radius: 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: #fff; color: #000; }
+.key { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.key .chip { padding: 6px 11px; font-size: 11.5px; display: inline-flex; align-items: center; gap: 7px; }
+.key .chip em { font-style: normal; display: inline-block; width: 14px; height: 0; border-top: 2px solid; }
+.read { position: relative; height: 0; }
+.tip { position: absolute; top: 4px; background: var(--elevated); border: 1px solid #333; border-radius: 12px; padding: 9px 11px; font-size: 11px; line-height: 1.6; z-index: 5; min-width: 150px; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.6); pointer-events: none; }
+.tip b { color: #fff; } .tip .r { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); } .tip .r span:last-child { color: var(--text); }
+.callout { border-left: 2px solid var(--down); padding: 2px 0 2px 12px; font-size: 12px; color: var(--text); line-height: 1.55; margin-top: 14px; }
+.callout small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+</style></head><body>
+<script src="shared.js"></script>
+<script>
+const { CYCLE, stats, delta, loggedWeeks, pct, signPct, fmt } = PS;
+PS.frame('Concept C', 'Progress index',
+  'The whole cycle as one picture. Every lift indexed to its own week 1, so a 35 lb dumbbell press and a 195 lb squat can share an axis. Switch what “progress” means and watch the story change.');
+
+const METRICS = {
+  top:  { label: 'Top weight',  get: s => s.top,     note: 'Heaviest weight used on any set.' },
+  reps: { label: 'Total reps',  get: s => s.reps,    note: 'Every rep in every set, at any weight.' },
+  ton:  { label: 'Volume',      get: s => s.tonnage, note: 'Weight × reps, summed over all sets.' },
+  e1rm: { label: 'Est. 1RM',    get: s => s.e1rm,    note: 'Best set converted to a one-rep-max estimate. Blends weight and reps.' }
+};
+let metric = 'e1rm', focus = null;
+
+const W = 342, H = 270, padL = 38, padR = 12, padT = 14, padB = 24;
+const weeks = loggedWeeks(), N = CYCLE.totalWeeks;
+const x = i => padL + (i + .5) * ((W - padL - padR) / N);
+
+const series = m => weeks.map(i => pct(METRICS[metric].get(stats(m, 0)), METRICS[metric].get(stats(m, i))));
+const overall = () => weeks.map((_, k) => CYCLE.movements.reduce((a, m) => a + series(m)[k], 0) / CYCLE.movements.length);
+
+function render() {
+  const all = CYCLE.movements.map(series), avg = overall();
+  const flat = all.flat().concat(avg, [0]);
+  let lo = Math.floor(Math.min(...flat) / 10) * 10, hi = Math.ceil(Math.max(...flat) / 10) * 10;
+  if (hi - lo < 20) { hi = lo + 20; }
+  const y = v => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+  const path = s => s.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+
+  let g = '';
+  for (let t = lo; t <= hi; t += (hi - lo > 60 ? 20 : 10)) {
+    g += `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? '#444' : '#1c1c1c'}" stroke-width="1"/>
+          <text x="${padL - 6}" y="${y(t) + 3}" fill="#888" font-size="9" text-anchor="end">${t > 0 ? '+' : t < 0 ? '−' : ''}${Math.abs(t)}%</text>`;
+  }
+  for (let i = 0; i < N; i++) g += `<text x="${x(i)}" y="${H - 6}" fill="${i === weeks.length - 1 ? '#fff' : '#888'}" font-size="9" text-anchor="middle">W${i + 1}</text>`;
+  g += `<line x1="${x(weeks.length)}" x2="${x(N - 1)}" y1="${y(0)}" y2="${y(0)}" stroke="#333" stroke-dasharray="2 4"/><text x="${x(N - 1)}" y="${y(0) - 7}" fill="#555" font-size="9" text-anchor="middle">deload</text>`;
+
+  CYCLE.movements.forEach((m, k) => {
+    const on = focus === m.short, dim = focus && !on;
+    g += `<path d="${path(all[k])}" fill="none" stroke="${on ? 'var(--load)' : '#5a5a5a'}" stroke-width="${on ? 2.5 : 1.5}" opacity="${dim ? .35 : on ? 1 : .8}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (on) g += all[k].map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="var(--load)" stroke="var(--surface)" stroke-width="2"/>`).join('');
+  });
+  g += `<path d="${path(avg)}" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  g += `<circle cx="${x(avg.length - 1)}" cy="${y(avg[avg.length - 1])}" r="4.5" fill="#fff" stroke="var(--surface)" stroke-width="2"/>`;
+  g += `<line id="cur" y1="${padT}" y2="${H - padB}" stroke="#666" stroke-width="1" style="display:none"/><rect id="hit" x="${padL}" y="0" width="${W - padL - padR}" height="${H}" fill="transparent"/>`;
+
+  const end = avg[avg.length - 1];
+  const chips = CYCLE.movements.map(m => `<button class="chip" aria-pressed="${focus === m.short}" data-f="${m.short}">${m.short}</button>`).join('');
+
+  // Where the metrics disagree: the case the old single-number chart got wrong.
+  let callout = '';
+  if (metric === 'ton') {
+    const hits = [];
+    for (const m of CYCLE.movements) for (let i = 1; i < weeks.length; i++) {
+      if (delta(m, i).kind === 'load' && stats(m, i).tonnage < stats(m, i - 1).tonnage) {
+        hits.push({ m, i, p: pct(stats(m, i - 1).tonnage, stats(m, i).tonnage) });
+      }
+    }
+    const h = hits.filter(x => !focus || x.m.short === focus).sort((a, b) => a.p - b.p)[0];
+    if (h) callout = `<div class="callout">${h.m.short} week ${h.i + 1}: volume <b>${signPct(h.p)}</b> — but the weight went up ${delta(h.m, h.i).text}.<small>Volume alone calls a heavier week a bad week. Try Est. 1RM.</small></div>`;
+  }
+
+  document.getElementById('app').innerHTML = `
+    <div class="seg">${Object.entries(METRICS).map(([k, v]) => `<button aria-pressed="${k === metric}" data-k="${k}">${v.label}</button>`).join('')}</div>
+    <div class="card">
+      <div class="hero num"><b>${end >= 0 ? '+' : '−'}${Math.abs(end).toFixed(0)}%</b><span>average across ${CYCLE.movements.length} lifts since week 1</span></div>
+      <div class="read"><div class="tip" id="tip"></div></div>
+      <svg id="svg" viewBox="0 0 ${W} ${H}" width="100%" style="margin-top:8px;touch-action:pan-y" role="img" aria-label="${METRICS[metric].label} change since week 1, per lift">${g}</svg>
+      <div class="key"><span class="chip on" style="background:none;color:#fff;border-color:#444"><em style="border-color:#fff"></em>All lifts (avg)</span>${chips}</div>
+      <p class="note" style="margin-bottom:0">${METRICS[metric].note} Tap a lift to isolate it; drag across the chart to read a week.</p>${callout}
+    </div>`;
+
+  document.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { metric = b.dataset.k; render(); });
+  document.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { focus = focus === b.dataset.f ? null : b.dataset.f; render(); });
+
+  const svg = document.getElementById('svg'), tip = document.getElementById('tip'), cur = document.getElementById('cur');
+  const move = e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W;
+    let i = Math.round((px - padL) / ((W - padL - padR) / N) - .5); i = Math.max(0, Math.min(weeks.length - 1, i));
+    cur.setAttribute('x1', x(i)); cur.setAttribute('x2', x(i)); cur.style.display = '';
+    const rows = CYCLE.movements.map((m, k) => [m.short, all[k][i]]).sort((a, b) => b[1] - a[1]);
+    tip.innerHTML = `<b>Week ${i + 1}</b>` + rows.map(([n, v]) => `<div class="r"><span>${n}</span><span class="num">${signPct(v)}</span></div>`).join('') + `<div class="r"><span>Average</span><span class="num"><b>${signPct(avg[i])}</b></span></div>`;
+    tip.style.display = 'block'; tip.style[x(i) > W / 2 ? 'left' : 'right'] = '12px'; tip.style[x(i) > W / 2 ? 'right' : 'left'] = 'auto';
+  };
+  svg.addEventListener('pointermove', move); svg.addEventListener('pointerdown', move);
+  svg.addEventListener('pointerleave', () => { tip.style.display = 'none'; cur.style.display = 'none'; });
+}
+render();
+</script></body></html>

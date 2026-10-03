@@ -38,6 +38,68 @@
         input[type="range"] { -webkit-appearance: none; background: #222; height: 4px; border-radius: 2px; }
         input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; background: #FFF; border-radius: 50%; cursor: pointer; box-shadow: 0 0 10px rgba(255,255,255,0.2); }
         input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+            /* Metrics scorecard. Tokens match the app palette; data colours are validated against the
+           dark surface: weight #3987e5, reps #199e70, slipped #d95926, deload #cc9a1f. */
+        .ms-card { background: #0A0A0A; border: 1px solid #222; border-radius: 20px; padding: 16px; }
+        .ms-eyebrow { display: flex; justify-content: space-between; font-size: 10px; text-transform: uppercase; letter-spacing: .16em; color: #888; font-weight: 600; }
+        .ms-hero { display: flex; align-items: baseline; gap: 10px; margin-top: 10px; }
+        .ms-hero b { font-size: 52px; font-weight: 700; letter-spacing: -.04em; color: #fff; line-height: 1; font-variant-numeric: tabular-nums; }
+        .ms-hero b.ms-hero-none { font-size: 30px; color: #888; letter-spacing: -.02em; }
+        .ms-hero span { font-size: 12px; color: #888; line-height: 1.35; max-width: 150px; }
+        .ms-empty { font-size: 13px; color: #888; line-height: 1.55; margin-top: 12px; }
+        .ms-empty b { color: #fff; font-weight: 600; }
+        .ms-sec { font-size: 10px; text-transform: uppercase; letter-spacing: .16em; color: #888; font-weight: 600; margin-bottom: 10px; }
+        .ms-legend, .ms-key { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11px; color: #888; }
+        .ms-legend { margin-top: 4px; }
+        .ms-key { margin: 0 2px 12px; font-size: 10.5px; }
+        .ms-key span b { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; border-radius: 5px; font-size: 10px; margin-right: 6px; vertical-align: -3px; }
+        .ms-key-line { display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: 2px; border-radius: 2px; }
+        .ms-key-line.ms-dashed { background: none; height: 0; border-top: 2px dashed #666; border-radius: 0; }
+        .ms-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+        .ms-sw { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+        .ms-split { display: flex; gap: 2px; height: 12px; }
+        .ms-split div { border-radius: 4px; min-width: 4px; }
+        .ms-why { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: #888; margin-top: 8px; }
+        .ms-why b { color: #fff; font-weight: 600; }
+        .ms-note { font-size: 11px; color: #888; line-height: 1.55; margin: 12px 0 0; }
+        .ms-foot { font-size: 10.5px; color: #555; margin: 14px 2px 0; }
+        .ms-grid { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: var(--gap, 4px); }
+        .ms-band { margin-top: 14px; padding: 0 15px; }
+        .ms-band div { height: 18px; border-radius: 6px; font-size: 9px; font-weight: 600; letter-spacing: .04em; color: #bbb; display: flex; align-items: center; justify-content: center; white-space: nowrap; overflow: hidden; }
+        .ms-p-base { background: #1a1a1a; } .ms-p-build { background: #242424; } .ms-p-peak { background: #2e2e2e; color: #ddd !important; }
+        .ms-p-deload { background: rgba(204,154,31,.12); border: 1px dashed rgba(204,154,31,.55); color: #cc9a1f !important; }
+        .ms-wkhead { margin: 5px 0 8px; padding: 0 15px; font-size: 9.5px; color: #888; text-align: center; }
+        .ms-wkhead b { color: #fff; }
+        .ms-row { background: #0A0A0A; border: 1px solid #222; border-radius: 18px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer; }
+        .ms-row-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+        .ms-name { font-size: 13.5px; font-weight: 600; color: #fff; }
+        .ms-sub { font-size: 10.5px; color: #888; margin-top: 2px; }
+        .ms-total { text-align: right; font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .ms-total small { display: block; font-size: 10px; font-weight: 500; color: #888; margin-top: 2px; }
+        .ms-cell { height: 34px; border-radius: 9px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; line-height: 1; border: 1px solid transparent; min-width: 0; }
+        .ms-cell small { font-size: 8.5px; font-weight: 600; margin-top: 3px; opacity: .9; white-space: nowrap; }
+        .ms-dense .ms-cell { height: 28px; border-radius: 7px; font-size: 11px; }
+        .ms-upcoming { border: 1px dashed #222; color: #555; }
+        .ms-missed { border: 1px dashed #3a3a3a; color: #555; }
+        .ms-deload { background: rgba(204,154,31,.16); color: #e0b341; border: 1px solid rgba(204,154,31,.45); }
+        .ms-tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 999px; border: 1px solid #222; color: #888; }
+        .ms-tag.ms-go { color: #199e70; border-color: rgba(25,158,112,.5); }
+        .ms-tag.ms-warn { color: #d95926; border-color: rgba(217,89,38,.5); }
+        .ms-tag.ms-shade { color: #9a9a9a; border-color: #333; background: #101010; }
+        .ms-detail { margin-top: 12px; border-top: 1px solid #222; padding-top: 10px; font-size: 11.5px; }
+        .ms-detail div { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; color: #888; }
+        .ms-detail div span:last-child { color: #EDEDED; text-align: right; font-variant-numeric: tabular-nums; }
+        .ms-detail .ms-range { color: #555; font-size: 10.5px; padding-top: 6px; }
+        .ms-group { background: #060606; border: 1px dashed #2c2c2c; border-radius: 18px; padding: 12px 14px; margin: 14px 0 8px; cursor: pointer; }
+        .ms-group .ms-name { color: #cfcfcf; }
+        .ms-stripe { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.035) 0 5px, transparent 5px 10px); border-radius: 6px; }
+        .ms-mini { height: 14px; border-radius: 4px; background: #171717; }
+        .ms-mini.ms-on { background: #3a3a3a; } .ms-mini.ms-part { background: #262626; } .ms-mini.ms-up { border: 1px dashed #2c2c2c; background: transparent; }
+        .ms-tick { height: 22px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: #1d1d1d; color: #8a8a8a; }
+        .ms-tick.ms-miss { background: transparent; border: 1px dashed #3a3a3a; color: #555; }
+        .ms-tick.ms-up { background: transparent; border: 1px dashed #222; color: #333; }
+        .ms-mv { padding-top: 12px; margin-top: 12px; border-top: 1px solid #1c1c1c; }
+        .ms-mv-name { font-size: 12.5px; color: #cfcfcf; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
     </style>
 </head>
 <body class="h-screen flex items-center justify-center p-4">
@@ -256,7 +318,7 @@
                 <h1 class="text-2xl font-semibold tracking-tight text-white">Progress</h1>
             </div>
 
-            <div id="metrics-body" class="p-6 space-y-8">
+            <div id="metrics-body" class="p-5">
                 <p class="text-sm text-textMuted">Loading...</p>
             </div>
         </div>
@@ -888,18 +950,23 @@
             }
         }
 
-        // --- T3-10: Metrics -------------------------------------------------------------
+        // --- Metrics: the cycle scorecard -----------------------------------------------
         //
-        // Static data, not an AI paragraph. The old tab spent a model call to produce prose
-        // that could not tell you what your bench had done since March, because nothing was
-        // ever computed from the training log.
+        // Every number here is computed on the server (cycleSnapshot.js, delivered as
+        // `cycle` on /api/metrics). This code only draws it, so the maths lives in one place
+        // that is tested without a browser, and the long-term AI review can read the same
+        // summary the screen shows.
         //
-        // The chart is hand-rolled SVG (decision D8): the CSP allows scripts from a short
-        // allowlist, this is a PWA that should work offline, and one line chart is not worth
-        // a 200KB dependency plus the work of theming it to match.
+        // The charts are hand-rolled SVG (decision D8): the CSP allows scripts from a short
+        // allowlist, this is a PWA that should work offline, and a trend line and a grid of
+        // cells are not worth a 200KB dependency plus the work of theming it to match.
+        //
+        // The layout is driven by the cycle's length (2 to 16 weeks): the grid is as many
+        // columns as there are weeks, and labels thin out as the columns narrow.
 
         let metricsCache = null;
-        let metricsMovement = null;
+        let metricsOpenLift = null;
+        let metricsGroupOpen = false;
 
         async function loadMetrics() {
             const body = document.getElementById('metrics-body');
@@ -910,9 +977,8 @@
                 });
                 if (!res.ok) throw new Error('Could not load your metrics');
                 metricsCache = await res.json();
-                if (!metricsMovement || !metricsCache.trendable.includes(metricsMovement)) {
-                    metricsMovement = metricsCache.trendable[0] || null;
-                }
+                metricsOpenLift = null;
+                metricsGroupOpen = false;
                 renderMetrics();
             } catch (e) {
                 body.innerHTML = `<p class="text-sm text-textMuted">${escapeHtml(e.message)}</p>
@@ -920,175 +986,239 @@
             }
         }
 
-        function fmtNumber(n) {
-            return Math.round(n).toLocaleString();
-        }
-
-        // Total tonnage gets large fast; "1.2M lb" reads better than eight digits on a phone.
-        function fmtVolume(n) {
-            if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-            if (n >= 10000) return Math.round(n / 1000) + 'k';
-            return fmtNumber(n);
-        }
-
-        function statTile(label, value, sub) {
-            return `
-            <div class="bg-surface border border-borderSubtle rounded-[20px] p-4">
-                <div class="text-[9px] uppercase tracking-widest text-textMuted font-semibold mb-2">${escapeHtml(label)}</div>
-                <div class="text-2xl font-semibold text-white tracking-tight leading-none">${escapeHtml(String(value))}</div>
-                ${sub ? `<div class="text-[10px] text-textMuted mt-1.5">${escapeHtml(sub)}</div>` : ''}
-            </div>`;
-        }
-
         function renderMetrics() {
-            const m = metricsCache;
-            const body = document.getElementById('metrics-body');
-            if (!m) return;
-
-            if (m.counts.allTime === 0) {
-                body.innerHTML = `
-                <div class="bg-surface border border-borderSubtle rounded-[24px] p-8 text-center">
-                    <h3 class="text-white font-semibold mb-2">Nothing logged yet</h3>
-                    <p class="text-sm text-textMuted leading-relaxed">Finish a workout and your numbers will start showing up here.</p>
-                </div>`;
-                return;
-            }
-
-            const movement = metricsCache.movements.find(x => x.name === metricsMovement);
-
-            body.innerHTML = `
-            <div>
-                <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Workouts</h3>
-                <div class="grid grid-cols-2 gap-3">
-                    ${statTile('This Week', m.counts.week)}
-                    ${statTile('This Month', m.counts.month)}
-                    ${statTile('This Year', m.counts.year)}
-                    ${statTile('All Time', m.counts.allTime, m.totalSets + ' sets logged')}
-                </div>
-            </div>
-
-            <div>
-                <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Weight Moved</h3>
-                <div class="grid grid-cols-2 gap-3">
-                    ${statTile('This Week', fmtVolume(m.volume.week) + ' lb')}
-                    ${statTile('This Month', fmtVolume(m.volume.month) + ' lb')}
-                    ${statTile('This Year', fmtVolume(m.volume.year) + ' lb')}
-                    ${statTile('All Time', fmtVolume(m.volume.allTime) + ' lb')}
-                </div>
-                <p class="text-[10px] text-textMuted mt-3 leading-relaxed">Weight times reps, across every logged set. Bodyweight work is not counted, since the app does not know what you weigh.</p>
-            </div>
-
-            ${renderProgressionSection(movement)}
-
-            <div>
-                <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Best Sets</h3>
-                <div class="space-y-2">
-                    ${m.movements.filter(x => x.best).slice(0, 8).map(x => `
-                    <div class="bg-surface border border-borderSubtle rounded-[18px] px-4 py-3 flex items-center justify-between gap-3">
-                        <div class="min-w-0">
-                            <div class="text-sm text-white font-medium truncate">${escapeHtml(x.name)}</div>
-                            <div class="text-[10px] text-textMuted mt-0.5">${x.sessions} ${x.sessions === 1 ? 'session' : 'sessions'}${x.aliases && x.aliases.length ? ' · also logged as ' + escapeHtml(x.aliases[0]) : ''}</div>
-                        </div>
-                        <div class="text-sm font-semibold text-white whitespace-nowrap">${fmtNumber(x.best.weight)} × ${x.best.reps}</div>
-                    </div>`).join('')}
-                </div>
-            </div>`;
+            if (!metricsCache) return;
+            document.getElementById('metrics-body').innerHTML =
+                metricsHtml(metricsCache, { openLift: metricsOpenLift, groupOpen: metricsGroupOpen });
         }
 
-        function renderProgressionSection(movement) {
-            const m = metricsCache;
-            if (!m.trendable.length) {
-                // Naming the movements that fall short makes the reason visible. Two entries
-                // that are obviously the same lift under different names is a diagnosis, not
-                // a mystery.
-                const singles = m.movements.filter(x => x.points.length === 1).slice(0, 6);
-                const list = singles.length
-                    ? `<div class="mt-4 space-y-1.5 text-left">`
-                      + singles.map(x => `<div class="text-xs text-textMuted flex justify-between"><span class="truncate mr-3">${escapeHtml(x.name)}</span><span class="whitespace-nowrap">1 session</span></div>`).join('')
-                      + `</div>`
-                    : '';
-                return `
-                <div>
-                    <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Progression</h3>
-                    <div class="bg-surface border border-borderSubtle rounded-[20px] p-6">
-                        <p class="text-sm text-textMuted leading-relaxed text-center">A movement needs two logged sessions before there is a line to draw.</p>
-                        ${list}
-                    </div>
-                </div>`;
-            }
+        function toggleMetricsLift(i) { metricsOpenLift = metricsOpenLift === i ? null : i; renderMetrics(); }
+        function toggleMetricsGroup() { metricsGroupOpen = !metricsGroupOpen; renderMetrics(); }
 
-            const options = m.trendable.map(n =>
-                `<option value="${escapeAttr(n)}"${n === metricsMovement ? ' selected' : ''}>${escapeHtml(n)}</option>`
-            ).join('');
+        // How each week compared with the one before. Hue is never the only signal: every state
+        // also has a glyph, and the grid has a key.
+        const MS_KIND = {
+            load: { label: 'More weight', glyph: '▲', bg: 'rgba(57,135,229,.22)', ink: '#7db3f5' },
+            reps: { label: 'More reps',   glyph: '+', bg: 'rgba(25,158,112,.22)', ink: '#5fd1a4' },
+            hold: { label: 'Held',        glyph: '=', bg: 'rgba(92,92,92,.28)',   ink: '#9a9a9a' },
+            down: { label: 'Slipped',     glyph: '▼', bg: 'rgba(217,89,38,.22)',  ink: '#f08a5d' },
+            start: { label: 'Baseline',   glyph: '●', bg: 'rgba(92,92,92,.18)',   ink: '#777777' }
+        };
 
-            return `
-            <div>
-                <h3 class="text-[10px] uppercase tracking-widest text-textMuted font-semibold mb-3">Progression</h3>
-                <div class="relative mb-3">
-                    <select onchange="metricsMovement = this.value; renderMetrics();" class="w-full p-3.5 bg-surface border border-borderSubtle rounded-2xl appearance-none focus:outline-none focus:border-textMuted text-sm text-textMain cursor-pointer">
-                        ${options}
-                    </select>
-                    <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-textMuted text-xs">▼</div>
-                </div>
-                ${lineChart(movement)}
-            </div>`;
+        function msPct(v) {
+            const r = Math.round(v * 10) / 10;
+            if (r === 0) return '0%';
+            return (r > 0 ? '+' : '−') + Math.abs(r).toFixed(Math.abs(r) < 10 && r % 1 ? 1 : 0) + '%';
+        }
+        function msHero(v) {
+            const r = Math.round(Math.abs(v));
+            return r === 0 ? '0%' : (v > 0 ? '+' : '−') + r + '%';
+        }
+        function msSigned(n) { return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n); }
+
+        function msNiceTicks(lo, hi) {
+            const steps = [1, 2, 5, 10, 20, 50];
+            const step = steps.find(s => (hi - lo) / s <= 4) || 50;
+            const out = [];
+            for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + 1e-9; v += step) out.push(v);
+            return out;
         }
 
-        // Heaviest set per session for one movement. Chosen over estimated 1RM or total volume
-        // because it is the number lifters actually track, and it does not silently change
-        // meaning when set counts change.
-        function lineChart(movement) {
-            if (!movement || movement.points.length < 2) return '';
+        // The cycle strength panel: one number, the trajectory, and where the gain came from.
+        function msPanel(c) {
+            const N = c.totalWeeks, L = c.loggedThrough, sum = c.summary, prev = c.previous;
+            const head = `<div class="ms-eyebrow"><span>Cycle strength</span><span>Week ${L} of ${N}</span></div>`;
 
-            const pts = movement.points;
-            const W = 320, H = 150;
-            const padL = 34, padR = 10, padT = 14, padB = 22;
+            if (sum.strengthPct === null) {
+                return `<div class="ms-card">${head}
+                    <div class="ms-hero"><b class="ms-hero-none">Not yet</b><span>estimated strength gained since week 1</span></div>
+                    <p class="ms-empty">Log a second week of training and your first strength change shows up here.${prev ? `<br><br>Last cycle finished <b>${escapeHtml(msPct(prev.strengthPct))}</b>.` : ''}</p></div>`;
+            }
 
-            const weights = pts.map(p => p.weight);
-            let lo = Math.min(...weights);
-            let hi = Math.max(...weights);
-            // A flat series would divide by zero and draw a line along the axis; give it room
-            // so a plateau still reads as a plateau rather than as an empty chart.
-            if (hi === lo) { hi = lo + Math.max(5, lo * 0.05); lo = Math.max(0, lo - Math.max(5, lo * 0.05)); }
+            const W = 342, H = 160, padL = 34, padR = 12, padT = 12, padB = 22, inner = W - padL - padR;
+            const isDeload = i => c.phases[i] && c.phases[i].key === 'deload';
+            const cur = sum.byWeek.map((v, i) => v === null ? null : { i, v, d: isDeload(i) }).filter(Boolean);
+            const work = cur.filter(p => !p.d), dls = cur.filter(p => p.d);
+            const prevPts = prev ? prev.byWeek.map((v, k) => v === null ? null : { f: (k + .5) / prev.totalWeeks, v }).filter(Boolean) : [];
+            const all = cur.map(p => p.v).concat(prevPts.map(p => p.v), [0, 4]);
+            const ticks = msNiceTicks(Math.min(...all), Math.max(...all));
+            const lo = ticks[0], hi = ticks[ticks.length - 1];
+            const y = v => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+            const x = i => padL + (i + .5) / N * inner;
+            const line = pts => pts.map((p, k) => (k ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+            const base = y(Math.max(lo, 0));
 
-            const t0 = new Date(pts[0].date).getTime();
-            const t1 = new Date(pts[pts.length - 1].date).getTime();
-            const span = t1 - t0 || 1;
+            let g = '';
+            for (const t of ticks) {
+                g += `<line x1="${padL}" x2="${W - padR}" y1="${y(t)}" y2="${y(t)}" stroke="${t === 0 ? '#444' : '#1c1c1c'}"/>`
+                   + `<text x="${padL - 6}" y="${y(t) + 3}" fill="#888" font-size="9" text-anchor="end">${t > 0 ? '+' + t + '%' : t < 0 ? '−' + Math.abs(t) + '%' : '0'}</text>`;
+            }
+            const every = N <= 8 ? 1 : 2;
+            for (let i = 0; i < N; i++) {
+                if (i % every !== 0) continue;
+                const now = i + 1 === L;
+                g += `<text x="${x(i)}" y="${H - 6}" fill="${now ? '#fff' : '#888'}" font-size="9" text-anchor="middle" font-weight="${now ? 700 : 400}">${N <= 8 ? 'W' : ''}${i + 1}</text>`;
+            }
+            // Deload weeks get their own band, so a dip there reads as the plan working.
+            for (let i = 0; i < N; i++) {
+                if (!isDeload(i)) continue;
+                const logged = i + 1 <= L;
+                g += `<rect x="${x(i) - inner / N / 2}" y="${padT}" width="${inner / N}" height="${H - padT - padB}" fill="rgba(204,154,31,${logged ? .13 : .06})"/>`
+                   + `<text x="${x(i)}" y="${padT + 9}" fill="#cc9a1f" font-size="8.5" font-weight="600" text-anchor="middle" opacity="${logged ? 1 : .7}">${N <= 8 ? 'DELOAD' : 'DL'}</text>`;
+            }
+            if (prevPts.length) {
+                g += `<path d="${line(prevPts.map(p => [padL + p.f * inner, y(p.v)]))}" fill="none" stroke="#666" stroke-width="1.5" stroke-dasharray="4 4" stroke-linecap="round"/>`;
+            }
+            const pts = work.map(p => [x(p.i), y(p.v)]);
+            const e = pts[pts.length - 1];
+            g += `<path d="${line(pts)} L${e[0]} ${base} L${pts[0][0]} ${base} Z" fill="rgba(255,255,255,.06)"/>`
+               + `<path d="${line(pts)}" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+            if (N <= 8) pts.slice(0, -1).forEach(p => { g += `<circle cx="${p[0]}" cy="${p[1]}" r="3" fill="#fff" stroke="#0A0A0A" stroke-width="2"/>`; });
+            g += `<circle cx="${e[0]}" cy="${e[1]}" r="4.5" fill="#fff" stroke="#0A0A0A" stroke-width="2"/>`;
+            dls.forEach(p => {
+                g += `<path d="M${e[0]} ${e[1]} L${x(p.i)} ${y(p.v)}" fill="none" stroke="#cc9a1f" stroke-width="2" stroke-dasharray="3 3" stroke-linecap="round"/>`
+                   + `<circle cx="${x(p.i)}" cy="${y(p.v)}" r="4.5" fill="#cc9a1f" stroke="#0A0A0A" stroke-width="2"/>`;
+            });
 
-            const x = p => padL + ((new Date(p.date).getTime() - t0) / span) * (W - padL - padR);
-            const y = p => padT + (1 - (p.weight - lo) / (hi - lo)) * (H - padT - padB);
+            const wShare = Math.max(sum.fromWeightPct, 0) || .001, rShare = Math.max(sum.fromRepsPct, 0) || .001;
+            const trade = sum.fromRepsPct < 0
+                ? `<p class="ms-note">Heavier weights cost a few reps, which is normal when you move up. Net gain is still ${escapeHtml(msPct(sum.strengthPct))}.</p>` : '';
+            const legend = `<span><i class="ms-key-line" style="background:#fff"></i>This cycle</span>`
+                + (prev ? `<span><i class="ms-key-line ms-dashed"></i>Last cycle · ${prev.totalWeeks} wk</span>` : '')
+                + (dls.length ? `<span><i class="ms-dot" style="background:#cc9a1f"></i>Deload week · lighter on purpose</span>` : '');
 
-            const line = pts.map((p, i) => (i ? 'L' : 'M') + x(p).toFixed(1) + ' ' + y(p).toFixed(1)).join(' ');
-            const area = line + ` L${x(pts[pts.length - 1]).toFixed(1)} ${H - padB} L${x(pts[0]).toFixed(1)} ${H - padB} Z`;
+            return `<div class="ms-card">${head}
+                <div class="ms-hero"><b>${escapeHtml(msHero(sum.strengthPct))}</b><span>estimated strength gained since week 1</span></div>
+                <svg viewBox="0 0 ${W} ${H}" class="w-full mt-2" style="height:auto" role="img" aria-label="Average strength gain by week${prev ? ', compared with the previous cycle' : ''}">${g}</svg>
+                <div class="ms-legend">${legend}</div>
+                <div class="ms-sec" style="margin-top:18px">Where the gain came from</div>
+                <div class="ms-split"><div style="flex:${wShare};background:#3987e5"></div><div style="flex:${rShare};background:#199e70"></div></div>
+                <div class="ms-why"><span><i class="ms-sw" style="background:#3987e5"></i>Heavier weight <b>${escapeHtml(msPct(sum.fromWeightPct))}</b></span><span><i class="ms-sw" style="background:#199e70"></i>More reps <b>${escapeHtml(msPct(sum.fromRepsPct))}</b></span></div>${trade}</div>`;
+        }
 
-            const dots = pts.map(p =>
-                `<circle cx="${x(p).toFixed(1)}" cy="${y(p).toFixed(1)}" r="2.5" fill="#FFFFFF"/>`
-            ).join('');
+        // Phases as a band above the week columns. A label that does not fit becomes its initial.
+        function msBand(c) {
+            const N = c.totalWeeks, colPx = N <= 6 ? 58 : N <= 8 ? 44 : 27;
+            const runs = [];
+            c.phases.forEach(p => {
+                const r = runs[runs.length - 1];
+                if (r && r.key === p.key) r.span++; else runs.push({ key: p.key, label: p.label, span: 1 });
+            });
+            return runs.map(r => {
+                const fits = r.span * colPx >= r.label.length * 6.4 + 10;
+                return `<div class="ms-p-${escapeAttr(r.key)}" style="grid-column: span ${r.span}" title="${escapeAttr(r.label)}">${escapeHtml(fits ? r.label : r.label[0])}</div>`;
+            }).join('');
+        }
 
-            const dateLabel = d => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            const first = pts[0], last = pts[pts.length - 1];
-            const change = last.weight - first.weight;
-            const changeText = change > 0 ? '+' + fmtNumber(change) + ' lb' : (change < 0 ? fmtNumber(change) + ' lb' : 'No change');
+        function msCell(c, m, i) {
+            const N = c.totalWeeks, w = m.weeks[i];
+            if (!w) {
+                return i + 1 <= c.loggedThrough
+                    ? `<div class="ms-cell ms-missed" title="Week ${i + 1}: not logged">–</div>`
+                    : `<div class="ms-cell ms-upcoming">·</div>`;
+            }
+            if (w.deload) {
+                const what = w.top === null ? w.reps + ' reps' : w.top + ' lb';
+                return `<div class="ms-cell ms-deload" title="Week ${i + 1}: deload week (${what})"><span>D</span>${N <= 8 ? '<small>deload</small>' : ''}</div>`;
+            }
+            const d = w.delta, k = MS_KIND[d.kind] || MS_KIND.hold;
+            let label = '';
+            if (N <= 8) {
+                label = d.kind === 'load' ? '+' + d.amount + ' lb'
+                    : d.kind === 'reps' ? '+' + d.amount + 'r'
+                    : d.kind === 'down' ? (d.unit === 'lb' ? d.amount + ' lb' : d.amount + 'r') : '';
+            }
+            const tip = `Week ${i + 1}: ${k.label}${d.kind === 'load' ? ' +' + d.amount + ' lb' : d.kind === 'reps' ? ' +' + d.amount + ' reps' : d.kind === 'down' ? ' ' + d.amount : ''}`;
+            return `<div class="ms-cell" style="background:${k.bg};color:${k.ink}" title="${escapeAttr(tip)}"><span>${k.glyph}</span>${label ? `<small>${escapeHtml(label)}</small>` : ''}</div>`;
+        }
 
-            return `
-            <div class="bg-surface border border-borderSubtle rounded-[20px] p-4">
-                <div class="flex items-baseline justify-between mb-2">
-                    <span class="text-sm font-semibold text-white">${fmtNumber(last.weight)} lb × ${last.reps}</span>
-                    <span class="text-[11px] font-semibold ${change > 0 ? 'text-white' : 'text-textMuted'}">${escapeHtml(changeText)}</span>
-                </div>
-                <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:auto" role="img" aria-label="Heaviest set over time">
-                    <line x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}" stroke="#222222" stroke-width="1"/>
-                    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="#222222" stroke-width="1"/>
-                    <text x="4" y="${padT + 4}" fill="#888888" font-size="9">${fmtNumber(hi)}</text>
-                    <text x="4" y="${H - padB + 3}" fill="#888888" font-size="9">${fmtNumber(lo)}</text>
-                    <path d="${area}" fill="rgba(255,255,255,0.06)"/>
-                    <path d="${line}" fill="none" stroke="#FFFFFF" stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"/>
-                    ${dots}
-                    <text x="${padL}" y="${H - 4}" fill="#888888" font-size="9">${escapeHtml(dateLabel(first.date))}</text>
-                    <text x="${W - padR}" y="${H - 4}" fill="#888888" font-size="9" text-anchor="end">${escapeHtml(dateLabel(last.date))}</text>
-                </svg>
-                <p class="text-[10px] text-textMuted mt-2">Heaviest set each session · ${movement.points.length} sessions</p>
-            </div>`;
+        function msSets(w) {
+            const ws = Array.from(new Set(w.sets.map(s => s.weight)));
+            if (ws.length === 1) return (ws[0] === null ? 'BW' : ws[0] + ' lb') + ' × ' + w.sets.map(s => s.reps).join(' · ');
+            return w.sets.map(s => (s.weight === null ? 'BW' : s.weight) + '×' + s.reps).join(' · ');
+        }
+
+        function msRow(c, m, idx, open) {
+            const N = c.totalWeeks;
+            const logged = m.weeks.filter(Boolean);
+            const working = logged.filter(w => !w.deload);
+            const basis = working.length ? working : logged;
+            const first = basis[0], last = basis[basis.length - 1];
+
+            let total;
+            if (m.tracked) total = `${escapeHtml(msPct(m.changePct))}<small>est. strength</small>`;
+            else if (first !== last) total = `${escapeHtml(msSigned(last.reps - first.reps))} reps<small>vs week ${first.week}</small>`;
+            else total = `<small>first week</small>`;
+
+            const tags = (m.readyForMore ? '<span class="ms-tag ms-go">Add weight next</span> ' : '')
+                + (m.stalling ? '<span class="ms-tag ms-warn">Stalling</span>' : '');
+            const sub = tags || (m.range ? `${m.range.min}–${m.range.max} rep range` : (m.tracked ? '' : 'Bodyweight'));
+
+            const detail = open ? `<div class="ms-detail">${logged.map(w =>
+                `<div><span>Week ${w.week}${w.deload ? ' · deload' : ''}</span><span>${escapeHtml(msSets(w))}</span></div>`).join('')}
+                ${m.range ? `<div class="ms-range"><span>Target range ${m.range.min}–${m.range.max} reps</span><span></span></div>` : ''}</div>` : '';
+
+            return `<div class="ms-row" role="button" tabindex="0" aria-expanded="${open}" onclick="toggleMetricsLift(${idx})">
+                <div class="ms-row-top"><div><div class="ms-name">${escapeHtml(m.name)}</div><div class="ms-sub">${sub}</div></div><div class="ms-total">${total}</div></div>
+                <div class="ms-grid${N > 8 ? ' ms-dense' : ''}" style="--n:${N};--gap:${N > 8 ? 3 : 4}px">${m.weeks.map((_, i) => msCell(c, m, i)).join('')}</div>${detail}</div>`;
+        }
+
+        // Movements that are not judged on progress (warm-ups, or anything the lifter switched
+        // off): collapsed and shaded, and counted only for whether they were done.
+        function msGroup(c, open) {
+            const qs = c.movements.filter(m => m.mode === 'consistency');
+            if (!qs.length) return '';
+            const N = c.totalWeeks, L = c.loggedThrough, u = c.summary.untracked;
+            const allWarm = qs.every(m => m.role === 'warmup' && m.modeSource === 'role');
+            const gap = N > 8 ? 3 : 4;
+            const mini = Array.from({ length: N }, (_, i) => {
+                if (i + 1 > L) return '<div class="ms-mini ms-up"></div>';
+                const done = qs.filter(m => m.weeks[i]).length;
+                return `<div class="ms-mini ${done === qs.length ? 'ms-on' : done ? 'ms-part' : ''}" title="Week ${i + 1}: ${done} of ${qs.length} done"></div>`;
+            }).join('');
+            const body = open ? qs.map(m => {
+                const first = m.weeks.findIndex(Boolean);
+                const ticks = m.weeks.map((w, i) => w ? `<div class="ms-tick" title="Week ${i + 1}: done">✓</div>`
+                    : (i + 1 <= L && i >= first) ? `<div class="ms-tick ms-miss" title="Week ${i + 1}: not done">–</div>`
+                    : '<div class="ms-tick ms-up"></div>').join('');
+                const why = m.modeSource === 'override' ? 'Turned off by you' : (m.role === 'warmup' ? 'Warm-up' : (m.role || 'Not tracked'));
+                return `<div class="ms-mv"><div class="ms-mv-name"><span>${escapeHtml(m.name)}</span><span class="ms-tag ms-shade">${escapeHtml(why)}</span></div>
+                    <div class="ms-grid" style="--n:${N};--gap:${gap}px">${ticks}</div></div>`;
+            }).join('') : '';
+            return `<div class="ms-group" role="button" tabindex="0" aria-expanded="${open}" onclick="toggleMetricsGroup()">
+                <div class="ms-row-top" style="margin-bottom:10px"><div><div class="ms-name">${allWarm ? 'Warm-up' : 'Not tracked'}</div><div class="ms-sub">${qs.length} movement${qs.length === 1 ? '' : 's'} · not tracked for progress</div></div>
+                <div class="ms-total">${u.weeksDone} of ${u.weeksPossible}<small>sessions done</small></div></div>
+                <div class="ms-grid ms-stripe" style="--n:${N};--gap:${gap}px">${mini}</div>${body}</div>`;
+        }
+
+        function metricsHtml(data, ui) {
+            const c = data && data.cycle;
+            const empty = msg => `<div class="ms-card" style="text-align:center;padding:32px 20px">
+                <h3 class="text-white font-semibold mb-2">${escapeHtml(msg[0])}</h3>
+                <p class="text-sm text-textMuted leading-relaxed">${escapeHtml(msg[1])}</p></div>`;
+
+            if (!c) return empty(['No active cycle', 'Build a plan and your progress will show up here as you train.']);
+            if (!c.movements.length) return empty(['Nothing logged yet', 'Finish a workout and your numbers will start showing up here.']);
+
+            const N = c.totalWeeks, gap = N > 8 ? 3 : 4;
+            const heads = Array.from({ length: N }, (_, i) =>
+                `<div>${i + 1 === c.loggedThrough ? '<b>' : ''}${N <= 8 ? 'W' : ''}${i + 1}${i + 1 === c.loggedThrough ? '</b>' : ''}</div>`).join('');
+            const key = ['load', 'reps', 'hold', 'down'].map(k =>
+                `<span><b style="background:${MS_KIND[k].bg};color:${MS_KIND[k].ink}">${MS_KIND[k].glyph}</b>${MS_KIND[k].label}</span>`).join('')
+                + `<span><b style="background:rgba(204,154,31,.16);color:#e0b341;border:1px solid rgba(204,154,31,.45)">D</b>Deload week</span>`;
+            const rows = c.movements
+                .map((m, idx) => m.mode === 'progress' ? msRow(c, m, idx, ui.openLift === idx) : '')
+                .join('');
+            const totals = data.counts ? `<p class="ms-foot">${data.counts.allTime} workouts and ${data.totalSets} sets logged in all.</p>` : '';
+
+            return `${msPanel(c)}
+                <div class="ms-sec" style="margin-top:22px">Every lift · whole cycle</div>
+                <div class="ms-key">${key}</div>
+                <div class="ms-grid ms-band" style="--n:${N};--gap:${gap}px">${msBand(c)}</div>
+                <div class="ms-grid ms-wkhead" style="--n:${N};--gap:${gap}px">${heads}</div>
+                ${rows}${msGroup(c, ui.groupOpen)}
+                <p class="ms-note">Strength is the average change in estimated one-rep max (best set, Epley formula) across your lifts, each counted equally. Bodyweight work is shown by reps and left out of that number. Tap a lift to see its sets.</p>
+                ${totals}`;
         }
 
         function startWorkout(dayIndex, opts) {

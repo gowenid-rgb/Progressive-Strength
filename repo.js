@@ -391,7 +391,32 @@ async function getJournalEntries(userId, limit = 20) {
     }));
 }
 
+/* ----------------------------------------------------------- weekly reviews */
+
+/** The saved coach review for one cycle week, or null. */
+async function getWeeklyReview(cycleId, weekNumber) {
+    const r = await db.query(
+        `SELECT review, sessions, generated_at FROM weekly_reviews WHERE cycle_id = $1 AND week_number = $2`,
+        [cycleId, weekNumber]
+    );
+    return r.rows[0] || null;
+}
+
+/** Stores a review, replacing any earlier one for the same cycle week. */
+async function saveWeeklyReview(userId, cycleId, weekNumber, review, sessions) {
+    const r = await db.query(
+        `INSERT INTO weekly_reviews (user_id, cycle_id, week_number, review, sessions)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (cycle_id, week_number)
+         DO UPDATE SET review = EXCLUDED.review, sessions = EXCLUDED.sessions, generated_at = now()
+         RETURNING review, sessions, generated_at`,
+        [userId, cycleId, weekNumber, JSON.stringify(review), sessions]
+    );
+    return r.rows[0];
+}
+
 module.exports = {
+    getWeeklyReview, saveWeeklyReview,
     getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek, setCycleLength,
     setCycleProgram, setTrackingOverride, getPreviousCycles,
     addSubstitution, getSubstitutions,

@@ -11,6 +11,7 @@ const repo = require('./repo');
 const cycles = require('./cycles');
 const { computeMetrics, canonicalName } = require('./metrics');
 const { computeCycleSnapshot } = require('./cycleSnapshot');
+const { buildReviewFacts, buildReviewPrompt, validateReview, normaliseReview, REVIEW_SCHEMA } = require('./weeklyReview');
 const program = require('./program');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
@@ -690,6 +691,87 @@ Schema requirement:
     } catch (error) {
         console.error('Error recalibrating plan:', error);
         res.status(500).json({ error: error.message || 'Failed to recalibrate plan' });
+    }
+});
+
+// The weekly coach review.
+//
+// The server works out the facts (what moved, what stalled, which sets are records) and the
+// model interprets them next to the lifter's journal. See weeklyReview.js. Generated on
+// request and stored per cycle week, so reopening the Journal costs nothing.
+async function loadReviewContext(userId) {
+    const [rows, cycle, journal] = await Promise.all([
+        repo.getSetsForMetrics(userId),
+        repo.getActiveCycle(userId),
+        repo.getJournalEntries(userId, 20)
+    ]);
+    const facts = buildReviewFacts({ rows, cycle, journal, now: new Date() });
+    return { cycle, journal, facts };
+}
+
+function presentReview(ctx, saved) {
+    const { cycle, journal, facts } = ctx;
+    if (!cycle) return { available: false, reason: 'no_cycle', review: null, stale: false };
+    if (!facts) return { available: false, reason: 'no_sessions', week: cycle.current_week, totalWeeks: cycle.total_weeks, review: null, stale: false };
+
+    // Out of date when the week has moved on since it was written: more sessions, or a note
+    // (an injury, say) the coach has not seen.
+    let stale = false;
+    if (saved) {
+        const written = new Date(saved.generated_at).getTime();
+        const newNote = journal.some(e => new Date(e.date).getTime() > written);
+        stale = facts.sessions.count > saved.sessions || newNote;
+    }
+    return {
+        available: true,
+        reason: null,
+        week: facts.cycle.week,
+        totalWeeks: facts.cycle.totalWeeks,
+        sessions: facts.sessions.count,
+        review: saved ? Object.assign({}, saved.review, { generatedAt: saved.generated_at }) : null,
+        stale
+    };
+}
+
+app.get('/api/weekly-review', authenticateToken, async (req, res) => {
+    try {
+        const ctx = await loadReviewContext(req.user.id);
+        const saved = ctx.facts ? await repo.getWeeklyReview(ctx.cycle.id, ctx.facts.cycle.week) : null;
+        res.json(presentReview(ctx, saved));
+    } catch (err) {
+        console.error('Weekly review lookup failed:', err);
+        res.status(500).json({ error: 'Could not load your weekly review' });
+    }
+});
+
+app.post('/api/weekly-review', authenticateToken, aiLimiters, async (req, res) => {
+    try {
+        if (!process.env.GEMINI_API_KEY) {
+            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        }
+        const ctx = await loadReviewContext(req.user.id);
+        if (!ctx.cycle) return res.status(400).json({ error: 'Start a cycle and log a workout first.' });
+        if (!ctx.facts) return res.status(400).json({ error: 'Log a workout this week and your coach can review it.' });
+
+        const generated = await generateJSON({
+            prompt: buildReviewPrompt(ctx.facts),
+            schema: REVIEW_SCHEMA,
+            validate: validateReview,
+            label: 'weekly-review'
+        });
+
+        // Records are the server's, not the model's: attached here so what is shown as a PR is
+        // exactly what was computed.
+        const review = Object.assign(normaliseReview(generated), {
+            week: ctx.facts.cycle.week,
+            personalRecords: ctx.facts.personalRecords,
+            basedOn: { sessions: ctx.facts.sessions.count, notes: ctx.facts.journal.thisWeek.length }
+        });
+        const saved = await repo.saveWeeklyReview(req.user.id, ctx.cycle.id, ctx.facts.cycle.week, review, ctx.facts.sessions.count);
+        res.json(presentReview(ctx, saved));
+    } catch (err) {
+        console.error('Weekly review failed:', err);
+        res.status(500).json({ error: 'Your coach could not write this review. Please try again in a moment.' });
     }
 });
 

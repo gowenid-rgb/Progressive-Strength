@@ -100,6 +100,35 @@
         .ms-tick.ms-up { background: transparent; border: 1px dashed #222; color: #333; }
         .ms-mv { padding-top: 12px; margin-top: 12px; border-top: 1px solid #1c1c1c; }
         .ms-mv-name { font-size: 12.5px; color: #cfcfcf; margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
+            /* Weekly coach review. App palette; no new hues: records are white-on-black, concerns reuse the
+           orange already used for "slipped". */
+        .wr-card { background: #0A0A0A; border: 1px solid #222; border-radius: 24px; padding: 20px; }
+        .wr-eyebrow { display: flex; justify-content: space-between; font-size: 10px; text-transform: uppercase; letter-spacing: .16em; color: #888; font-weight: 600; }
+        .wr-headline { font-size: 19px; font-weight: 600; color: #fff; letter-spacing: -.01em; line-height: 1.25; margin: 12px 0 8px; }
+        .wr-summary { font-size: 13.5px; color: #EDEDED; line-height: 1.6; margin: 0; }
+        .wr-muted { font-size: 13px; color: #888; line-height: 1.6; margin: 10px 0 0; }
+        .wr-error { font-size: 12px; color: #f08a5d; line-height: 1.5; margin: 12px 0 0; }
+        .wr-btn { width: 100%; margin-top: 16px; background: #fff; color: #000; border: 0; border-radius: 16px; padding: 14px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .wr-btn:disabled { opacity: .6; cursor: default; }
+        .wr-btn-ghost { width: auto; padding: 10px 18px; background: #0A0A0A; color: #fff; border: 1px solid #222; font-size: 13px; }
+        .wr-btn-small { width: auto; margin: 0; padding: 8px 14px; border-radius: 12px; font-size: 12px; flex: none; }
+        .wr-prs { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+        .wr-pr { display: flex; align-items: center; gap: 10px; background: #141414; border: 1px solid #2a2a2a; border-radius: 14px; padding: 9px 12px; font-size: 12.5px; color: #EDEDED; }
+        .wr-pr b { color: #fff; font-weight: 600; }
+        .wr-pr-tag { flex: none; background: #fff; color: #000; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; padding: 3px 7px; border-radius: 6px; }
+        .wr-stale { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #141414; border: 1px dashed #333; border-radius: 14px; padding: 10px 12px; margin-top: 14px; font-size: 12px; color: #bbb; line-height: 1.4; }
+        .wr-sec { font-size: 10px; text-transform: uppercase; letter-spacing: .16em; color: #888; font-weight: 600; margin: 22px 0 10px; }
+        .wr-item { margin-bottom: 12px; }
+        .wr-item-title { font-size: 13.5px; font-weight: 600; color: #fff; line-height: 1.35; }
+        .wr-item-detail { font-size: 12.5px; color: #999; line-height: 1.55; margin-top: 3px; }
+        .wr-tag { display: inline-block; font-size: 9.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px; border: 1px solid #333; color: #999; vertical-align: 1px; margin-left: 4px; }
+        .wr-tag-hot { color: #d95926; border-color: rgba(217,89,38,.55); }
+        .wr-focus { display: flex; gap: 12px; margin-bottom: 14px; }
+        .wr-num { flex: none; width: 22px; height: 22px; border-radius: 50%; background: #1d1d1d; color: #fff; font-size: 11.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+        .wr-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 18px; padding-top: 14px; border-top: 1px solid #1c1c1c; font-size: 11px; color: #666; }
+        .wr-link { background: none; border: 0; color: #888; font: inherit; font-size: 11px; text-decoration: underline; cursor: pointer; padding: 0; }
+        .wr-link:disabled { opacity: .6; cursor: default; }
+        .wr-disclaimer { font-size: 10.5px; color: #555; line-height: 1.5; margin: 10px 0 0; }
     </style>
 </head>
 <body class="h-screen flex items-center justify-center p-4">
@@ -291,6 +320,7 @@
             </div>
 
             <div class="p-6">
+                <div id="weekly-review" class="mb-8"></div>
                 <p class="text-sm text-textMuted mb-5 leading-relaxed">
                     Anything worth remembering. How you felt, what was hard, any aches, how you slept.
                     These are saved with your training history.
@@ -620,7 +650,7 @@
                 bottomNav.classList.add('flex');
             }
 
-            if (screenId === 'screen-journal') renderJournalEntries();
+            if (screenId === 'screen-journal') { renderJournalEntries(); loadWeeklyReview(); }
             if (screenId === 'screen-metrics') loadMetrics();
 
             if(navBtnId) {
@@ -1940,6 +1970,136 @@
                     <p class="text-sm text-textMain leading-relaxed whitespace-pre-wrap">${escapeHtml(text)}</p>
                 </div>`;
             }).join('');
+        }
+
+        // --- Weekly coach review --------------------------------------------------------
+        //
+        // The review is written on the server from numbers it computed itself (what moved, what
+        // stalled, which sets are records) plus the journal, then stored per cycle week. This
+        // code only asks for it and draws it. Nothing here calls a model on its own: reading
+        // costs nothing, and a review is only written when the lifter presses the button.
+
+        let reviewState = null;       // last answer from GET/POST /api/weekly-review
+        let reviewBusy = false;       // a review is being written
+        let reviewError = null;       // message from the last failed request
+
+        async function loadWeeklyReview() {
+            try {
+                const res = await fetch('/api/weekly-review', {
+                    headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') }
+                });
+                if (!res.ok) throw new Error('Could not load your weekly review');
+                reviewState = await res.json();
+                reviewError = null;
+            } catch (e) {
+                reviewError = e.message;
+            }
+            renderWeeklyReview();
+        }
+
+        async function requestWeeklyReview() {
+            if (reviewBusy) return;
+            reviewBusy = true;
+            reviewError = null;
+            renderWeeklyReview();
+            try {
+                const res = await fetch('/api/weekly-review', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                    body: '{}'
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || 'Your coach could not write this review. Please try again.');
+                reviewState = data;
+            } catch (e) {
+                reviewError = e.message;
+            } finally {
+                reviewBusy = false;
+                renderWeeklyReview();
+            }
+        }
+
+        function renderWeeklyReview() {
+            const box = document.getElementById('weekly-review');
+            if (box) box.innerHTML = weeklyReviewHtml(reviewState, { busy: reviewBusy, error: reviewError });
+        }
+
+        // "★ Back Squat · 205 lb × 5 (was 195)": the record, in the words a lifter would use.
+        function reviewPrLabel(pr) {
+            if (pr.type === 'weight') return `${pr.weight} lb × ${pr.reps}` + (pr.previous && pr.previous.weight ? ` (was ${pr.previous.weight})` : '');
+            if (pr.type === 'reps') return pr.weight ? `${pr.reps} reps at ${pr.weight} lb (was ${pr.previous.reps})` : `${pr.reps} reps (was ${pr.previous.reps})`;
+            return `est. max ${Math.round(pr.e1rm)} lb (was ${Math.round(pr.previous.e1rm)})`;
+        }
+
+        const REVIEW_WATCH_TAG = { stall: 'Stalling', injury: 'Injury', fatigue: 'Fatigue', consistency: 'Consistency' };
+
+        function weeklyReviewHtml(state, ui) {
+            const shell = inner => `<div class="wr-card">${inner}</div>`;
+            const head = week => `<div class="wr-eyebrow"><span>Weekly coach review</span>${week ? `<span>Week ${week}</span>` : ''}</div>`;
+
+            if (!state) {
+                if (ui.error) {
+                    return shell(`${head()}<p class="wr-muted">${escapeHtml(ui.error)}</p>
+                        <button onclick="loadWeeklyReview()" class="wr-btn wr-btn-ghost">Retry</button>`);
+                }
+                return shell(`${head()}<p class="wr-muted">Loading...</p>`);
+            }
+
+            if (!state.available) {
+                const msg = state.reason === 'no_cycle'
+                    ? 'Start a cycle and log a workout, and your coach will review each week here.'
+                    : 'Log a workout this week and your coach will go through it with you here.';
+                return shell(`${head(state.week)}<p class="wr-muted">${escapeHtml(msg)}</p>`);
+            }
+
+            const err = ui.error ? `<p class="wr-error">${escapeHtml(ui.error)}</p>` : '';
+            const sessions = state.sessions === 1 ? '1 session' : state.sessions + ' sessions';
+
+            if (!state.review) {
+                return shell(`${head(state.week)}
+                    <h3 class="wr-headline">Ready when you are</h3>
+                    <p class="wr-muted">You logged ${escapeHtml(sessions)} this week. Your coach will read your lifts and your journal, then tell you what went well and what to focus on next.</p>
+                    ${err}
+                    <button onclick="requestWeeklyReview()" class="wr-btn" ${ui.busy ? 'disabled' : ''}>${ui.busy ? 'Your coach is reviewing your week...' : 'Get my review'}</button>`);
+            }
+
+            const r = state.review;
+            const when = r.generatedAt ? new Date(r.generatedAt) : null;
+            const stamp = when && !isNaN(when) ? when.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+            const basis = r.basedOn
+                ? `Based on ${r.basedOn.sessions === 1 ? '1 session' : r.basedOn.sessions + ' sessions'}` +
+                  (r.basedOn.notes ? ` and ${r.basedOn.notes === 1 ? '1 note' : r.basedOn.notes + ' notes'}` : '') + (stamp ? ` · ${stamp}` : '')
+                : stamp;
+
+            const prs = (r.personalRecords || []).map(p =>
+                `<div class="wr-pr"><span class="wr-pr-tag">PR</span><span><b>${escapeHtml(p.name)}</b> · ${escapeHtml(reviewPrLabel(p))}</span></div>`).join('');
+
+            const wins = (r.wins || []).map(w =>
+                `<div class="wr-item"><div class="wr-item-title">${escapeHtml(w.title)}</div><div class="wr-item-detail">${escapeHtml(w.detail)}</div></div>`).join('');
+
+            const watch = (r.watch || []).map(w => {
+                const tag = REVIEW_WATCH_TAG[w.kind];
+                const hot = w.kind === 'injury' || w.kind === 'stall';
+                return `<div class="wr-item"><div class="wr-item-title">${escapeHtml(w.title)}${tag ? ` <span class="wr-tag${hot ? ' wr-tag-hot' : ''}">${escapeHtml(tag)}</span>` : ''}</div><div class="wr-item-detail">${escapeHtml(w.detail)}</div></div>`;
+            }).join('');
+
+            const focus = (r.focus || []).map((f, i) =>
+                `<div class="wr-focus"><span class="wr-num">${i + 1}</span><div><div class="wr-item-title">${escapeHtml(f.action)}</div><div class="wr-item-detail">${escapeHtml(f.why)}</div></div></div>`).join('');
+
+            const stale = state.stale
+                ? `<div class="wr-stale"><span>You have logged more since this was written.</span><button onclick="requestWeeklyReview()" class="wr-btn wr-btn-small" ${ui.busy ? 'disabled' : ''}>${ui.busy ? 'Updating...' : 'Update review'}</button></div>`
+                : '';
+
+            return shell(`${head(r.week || state.week)}
+                <h3 class="wr-headline">${escapeHtml(r.headline)}</h3>
+                <p class="wr-summary">${escapeHtml(r.summary)}</p>
+                ${prs ? `<div class="wr-prs">${prs}</div>` : ''}
+                ${stale}${err}
+                ${wins ? `<div class="wr-sec">What went well</div>${wins}` : ''}
+                ${watch ? `<div class="wr-sec">Keep an eye on</div>${watch}` : ''}
+                <div class="wr-sec">Focus next week</div>${focus}
+                <div class="wr-foot"><span>${escapeHtml(basis)}</span>${state.stale ? '' : `<button onclick="requestWeeklyReview()" class="wr-link" ${ui.busy ? 'disabled' : ''}>${ui.busy ? 'Refreshing...' : 'Refresh'}</button>`}</div>
+                <p class="wr-disclaimer">General coaching, not medical advice. Pain that is sharp, getting worse, or lasting is worth getting checked.</p>`);
         }
 
         if ('serviceWorker' in navigator) {

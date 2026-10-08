@@ -127,12 +127,18 @@ app.post('/api/workouts', authenticateToken, async (req, res) => {
         }
 
         const cycle = await repo.getActiveCycle(req.user.id);
+        // Sessions saved before clientIds existed are recognised by the timestamp the client
+        // stamped on them, so even an older cached copy of the app cannot create a second copy.
+        const stamped = workout.date ? new Date(workout.date) : null;
+        const clientId = workout.clientId || (stamped && !isNaN(stamped) ? 'legacy:' + stamped.toISOString() : null);
+
         const saved = await repo.appendWorkout(req.user.id, Object.assign({}, workout, {
             cycleId: cycle ? cycle.id : null,
-            weekNumber: workout.weekNumber || (cycle ? cycle.current_week : null)
+            weekNumber: workout.weekNumber || (cycle ? cycle.current_week : null),
+            clientId
         }));
 
-        res.status(201).json({ success: true, workoutId: saved.id });
+        res.status(saved.duplicate ? 200 : 201).json({ success: true, workoutId: saved.id, duplicate: !!saved.duplicate });
     } catch (err) {
         console.error('Append workout failed:', err);
         res.status(500).json({ error: 'Failed to save workout' });
@@ -214,6 +220,65 @@ async function buildNamesBlock(userId, extraNames) {
         'Only invent a new name for a movement genuinely not in the list above.'
     ].join('\n');
 }
+
+// Correcting logged history.
+//
+// The log was append-only, which protected it from the sync bugs that once wiped it but left no way
+// to fix a mis-logged set. These routes correct it without destroying anything: deletes are soft,
+// edits are recorded (see repo.js and migration 007). Every route is scoped to the signed-in user
+// in the query itself, so a guessed id cannot reach someone else's workout.
+const editRoute = fn => async (req, res) => {
+    try {
+        res.json(await fn(req));
+    } catch (err) {
+        if (err && err.status) return res.status(err.status).json({ error: err.message });
+        console.error('History correction failed:', err);
+        res.status(500).json({ error: 'Could not save that change' });
+    }
+};
+const idOf = v => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
+const need = (v, what) => { if (v === null) { const e = new Error('Invalid ' + what); e.status = 400; throw e; } return v; };
+
+app.get('/api/workouts', authenticateToken, editRoute(async req => {
+    const [workouts, cycle] = await Promise.all([repo.listWorkouts(req.user.id), repo.getActiveCycle(req.user.id)]);
+    return {
+        workouts,
+        cycle: cycle ? { id: cycle.id, totalWeeks: cycle.total_weeks, currentWeek: cycle.current_week } : null
+    };
+}));
+
+app.patch('/api/workouts/:id', authenticateToken, editRoute(async req => {
+    await repo.moveWorkout(req.user.id, need(idOf(req.params.id), 'workout'), (req.body || {}).weekNumber);
+    return { ok: true };
+}));
+
+app.delete('/api/workouts/:id', authenticateToken, editRoute(async req => {
+    await repo.deleteWorkout(req.user.id, need(idOf(req.params.id), 'workout'));
+    return { ok: true };
+}));
+
+app.patch('/api/workouts/:id/sets/:setId', authenticateToken, editRoute(async req => {
+    const body = req.body || {};
+    await repo.updateSet(req.user.id, need(idOf(req.params.id), 'workout'), need(idOf(req.params.setId), 'set'), { weight: body.weight, reps: body.reps });
+    return { ok: true };
+}));
+
+app.delete('/api/workouts/:id/sets/:setId', authenticateToken, editRoute(async req => {
+    const out = await repo.deleteSet(req.user.id, need(idOf(req.params.id), 'workout'), need(idOf(req.params.setId), 'set'));
+    return { ok: true, workoutRemoved: out.workoutRemoved };
+}));
+
+app.post('/api/workouts/:id/sets', authenticateToken, editRoute(async req => {
+    const body = req.body || {};
+    const out = await repo.addSet(req.user.id, need(idOf(req.params.id), 'workout'), { exercise: body.exercise, weight: body.weight, reps: body.reps });
+    return { ok: true, id: out.id };
+}));
+
+app.patch('/api/workouts/:id/exercise', authenticateToken, editRoute(async req => {
+    const body = req.body || {};
+    await repo.renameExercise(req.user.id, need(idOf(req.params.id), 'workout'), body.from, body.to);
+    return { ok: true };
+}));
 
 // Training aggregates. No AI, no cost, no latency beyond one query — the Metrics tab used to
 // be a button that spent a model call to produce a paragraph, which could not tell you what

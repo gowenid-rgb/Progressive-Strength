@@ -19,6 +19,11 @@
 //   consistency  only "was it done?" — no arrows, no "stalling", left out of every total
 // The mode comes from the movement's role in the programme, and the lifter can override it.
 //
+// A lift trained on two days (a heavy day and a volume day) is compared SLOT BY SLOT: this
+// week's Day 1 against last week's Day 1. Adding both days into one total made a half-finished
+// week look like a slip, because it was being weighed against a full one. A day that has not
+// happened yet is simply not compared.
+//
 // Deload weeks are tracked and shown (completing one matters) but flagged. They are never
 // counted as "slipped", and the week after a deload is compared with the week BEFORE it —
 // otherwise coming back to normal weights would read as a burst of progress.
@@ -66,6 +71,72 @@ function compare(prev, cur) {
     return { kind: 'down', amount: cur.reps - prev.reps, unit: 'reps' };
 }
 
+// Which day of the programme a session belongs to. Prefers the day's index, then its name; a
+// session with neither falls into one shared slot, which behaves like the old whole-week total.
+function slotKey(r) {
+    if (r.day_index !== null && r.day_index !== undefined && r.day_index !== '') return 'd' + r.day_index;
+    const name = String(r.day_name || '').trim().toLowerCase();
+    return name ? 'n:' + name : 'x';
+}
+
+// One verdict for the week from the slot-by-slot comparisons. Any day that got heavier or gained
+// reps is progress; a day that slipped only counts when nothing else moved.
+function combine(comps) {
+    const loads = comps.filter(c => c.kind === 'load');
+    if (loads.length) return { kind: 'load', amount: Math.max(...loads.map(c => c.amount)) };
+    const reps = comps.filter(c => c.kind === 'reps');
+    if (reps.length) return { kind: 'reps', amount: reps.reduce((t, c) => t + c.amount, 0) };
+    const downs = comps.filter(c => c.kind === 'down');
+    if (downs.length) return downs.reduce((w, c) => (Math.abs(c.amount) > Math.abs(w.amount) ? c : w));
+    return { kind: 'hold', amount: 0 };
+}
+
+// The sets that represent each day this week. If the same day was logged more than once (a repeat
+// or a duplicated upload), the BEST single session stands for it, so doubled-up sets cannot inflate
+// the comparison. Sessions with no day information cannot be told apart, so those are added together.
+function slotSets(sessions) {
+    const bySlot = new Map();
+    for (const s of (sessions ? sessions.values() : [])) {
+        if (!bySlot.has(s.slot)) bySlot.set(s.slot, []);
+        bySlot.get(s.slot).push(s);
+    }
+    const out = new Map();
+    const total = s => s.sets.reduce((t, x) => t + x.reps, 0);
+    for (const [slot, list] of bySlot) {
+        if (slot === 'x') { out.set(slot, list.flatMap(s => s.sets)); continue; }
+        const best = list.reduce((b, s) =>
+            (total(s) > total(b) || (total(s) === total(b) && new Date(s.date) >= new Date(b.date))) ? s : b);
+        out.set(slot, best.sets);
+    }
+    return out;
+}
+
+function sessionList(sessions) {
+    return Array.from(sessions ? sessions.values() : [])
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
+        .map(s => ({
+            workoutId: s.workoutId,
+            dayName: s.dayName,
+            date: s.date,
+            sets: s.sets.map(x => ({ weight: x.weight === null ? null : round1(x.weight), reps: x.reps }))
+        }));
+}
+
+// The order lifts appear in the programme: Day 1 top to bottom, then Day 2, and so on.
+function programOrder(program) {
+    const out = new Map();
+    let i = 0;
+    for (const d of (program && Array.isArray(program.days) ? program.days : [])) {
+        for (const e of (Array.isArray(d.exercises) ? d.exercises : [])) {
+            if (!e || !e.name) continue;
+            const k = canonicalName(e.name);
+            if (!out.has(k)) out.set(k, i);
+            i++;
+        }
+    }
+    return out;
+}
+
 function rangeLookup(program) {
     const out = new Map();
     const days = program && Array.isArray(program.days) ? program.days : [];
@@ -98,6 +169,28 @@ function phaseList(cycle, totalWeeks) {
     });
 }
 
+// Logged work that belongs to no week of this cycle: a session saved while there was no active
+// cycle, or one with no week number. It cannot be drawn on the scorecard, but it must never be
+// invisible, so it is reported and the lifter can attach it to a week. Only work since this
+// cycle began counts; older history from before cycles existed is not "missing".
+function unplacedWork(list, cycle) {
+    const since = cycle.created_at ? new Date(cycle.created_at).getTime() : -Infinity;
+    const loose = new Map();
+    for (const r of list) {
+        const noCycle = r.cycle_id === null || r.cycle_id === undefined;
+        const noWeek = Number(r.cycle_id) === Number(cycle.id) && !(Number(r.week_number) >= 1);
+        if (!noCycle && !noWeek) continue;
+        if (new Date(r.finished_at).getTime() < since) continue;
+        const key = canonicalName(r.exercise_name) || String(r.exercise_name || '').toLowerCase();
+        if (!loose.has(key)) loose.set(key, { name: r.exercise_name, sets: 0, sessions: new Set() });
+        const x = loose.get(key);
+        x.name = r.exercise_name;
+        x.sets++;
+        x.sessions.add(r.workout_id);
+    }
+    return Array.from(loose.values()).map(x => ({ name: x.name, sets: x.sets, sessions: x.sessions.size }));
+}
+
 function build(rows, cycle) {
     const list = Array.isArray(rows) ? rows : [];
     const mine = list.filter(r => Number(r.cycle_id) === Number(cycle.id) && Number(r.week_number) >= 1);
@@ -118,12 +211,20 @@ function build(rows, cycle) {
         const reps = Number(r.reps_value);
         if (!Number.isFinite(reps)) continue;
         const key = canonicalName(r.exercise_name) || String(r.exercise_name || '').toLowerCase();
-        if (!lifts.has(key)) lifts.set(key, { key, name: r.exercise_name, weeks: new Map() });
+        if (!lifts.has(key)) lifts.set(key, { key, name: r.exercise_name, weeks: new Map(), sessions: new Map() });
         const l = lifts.get(key);
         l.name = r.exercise_name;
         const w = Number(r.week_number);
         if (!l.weeks.has(w)) l.weeks.set(w, []);
-        l.weeks.get(w).push({ weight: toPounds(r), reps });
+        const set = { weight: toPounds(r), reps };
+        l.weeks.get(w).push(set);
+
+        if (!l.sessions.has(w)) l.sessions.set(w, new Map());
+        const bySession = l.sessions.get(w);
+        if (!bySession.has(r.workout_id)) {
+            bySession.set(r.workout_id, { workoutId: r.workout_id, slot: slotKey(r), dayName: r.day_name || null, date: r.finished_at, sets: [] });
+        }
+        bySession.get(r.workout_id).sets.push(set);
     }
 
     const movements = [];
@@ -134,16 +235,33 @@ function build(rows, cycle) {
 
         const weeks = Array(totalWeeks).fill(null);
         let prev = null;                      // last logged NON-deload week: what the next week is compared with
+        const lastBySlot = new Map();         // each day's most recent working session
         let moved = 0, possible = 0;
         const recent = [];
         for (let w = 1; w <= totalWeeks; w++) {
             if (!l.weeks.has(w)) continue;
             const s = summariseWeek(w, l.weeks.get(w));
             s.deload = isDeload(w);
+            s.sessions = sessionList(l.sessions.get(w));
+            // The reps in the week's single best session. Adding every session together made a week
+            // with a repeated or duplicated day look better than it was, and made the next, shorter
+            // week look like a collapse.
+            s.bestSessionReps = s.sessions.length
+                ? Math.max(...s.sessions.map(x => x.sets.reduce((t, y) => t + y.reps, 0)))
+                : s.reps;
             if (mode === 'consistency') {
                 s.delta = { kind: 'done' };
             } else {
-                s.delta = compare(prev, s);
+                const comps = [];
+                for (const [slot, sets] of slotSets(l.sessions.get(w))) {
+                    const cur = summariseWeek(w, sets);
+                    const before = lastBySlot.get(slot);
+                    if (before) comps.push(compare(before, cur));
+                    if (!s.deload) lastBySlot.set(slot, cur);
+                }
+                // No day to compare with (a first week, or the programme's days were renamed):
+                // fall back to the whole-week comparison rather than guessing.
+                s.delta = comps.length ? combine(comps) : compare(prev, s);
                 if (s.deload) {
                     // Shown, but never judged: fewer pounds on purpose is the plan working.
                 } else {
@@ -194,6 +312,9 @@ function build(rows, cycle) {
             fromWeightPct: fromWeightPct === null ? null : round1(fromWeightPct),
             fromRepsPct: fromRepsPct === null ? null : round1(fromRepsPct),
             loadChange,
+            // Change in reps per session between the first and latest working week: how a
+            // bodyweight lift, which has no strength percentage, is summarised.
+            repsChange: basis.length >= 2 ? latest.bestSessionReps - first.bestSessionReps : null,
             weeksMoved: moved,
             weeksCompared: possible,
             weeksDone: mode === 'consistency' ? logged.length : null,
@@ -201,9 +322,16 @@ function build(rows, cycle) {
             readyForMore: mode === 'progress' && !!(range && latest.sets.length && latest.sets.every(s => s.reps >= range.max)),
             // Needs three comparisons of history before it is fair to call a lift stalled.
             stalling: mode === 'progress' && recent.length >= 3 && recent.slice(-3).filter(Boolean).length <= 1,
-            _first: first
+            _first: first,
+            _key: l.key
         });
     }
+
+    // Programme order, not first-logged order: a lift first done in week 2 should sit where the
+    // plan puts it, not below every lift from week 1 where it is easy to miss.
+    const order = programOrder(cycle.program);
+    movements.forEach((m, i) => { m._i = i; });
+    movements.sort((a, b) => (order.has(a._key) ? order.get(a._key) : 1e6 + a._i) - (order.has(b._key) ? order.get(b._key) : 1e6 + b._i));
 
     const trackedLifts = movements.filter(m => m.tracked);
 
@@ -245,7 +373,8 @@ function build(rows, cycle) {
             avgLoadAdded: trackedLifts.length ? round1(mean(trackedLifts.map(m => m.loadChange))) : null,
             byWeek
         },
-        movements: movements.map(({ _first, ...m }) => m)
+        unplaced: unplacedWork(list, cycle),
+        movements: movements.map(({ _first, _key, _i, ...m }) => m)
     };
     return snapshot;
 }

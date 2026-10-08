@@ -202,15 +202,15 @@ async function getWeekPlan(cycleId, weekNumber) {
  * Weight and reps arrive as free text and are stored both parsed and raw — see units.js.
  * The whole insert is one transaction, so a session can never land without its sets.
  */
-async function appendWorkout(userId, workout) {
+async function insertWorkout(userId, workout, clientId) {
     const exercises = Array.isArray(workout.exercises) ? workout.exercises : [];
 
     return db.withTransaction(async client => {
         const w = await client.query(
             `INSERT INTO workouts
                 (user_id, cycle_id, week_number, day_index, day_name, plan_name,
-                 notes, started_at, finished_at, duration_seconds)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9, now()),$10)
+                 notes, started_at, finished_at, duration_seconds, client_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9, now()),$10,$11)
              RETURNING *`,
             [
                 userId,
@@ -222,7 +222,8 @@ async function appendWorkout(userId, workout) {
                 workout.notes || null,
                 workout.startedAt || null,
                 workout.date || null,
-                workout.durationSeconds || null
+                workout.durationSeconds || null,
+                clientId
             ]
         );
         const saved = w.rows[0];
@@ -276,14 +277,14 @@ async function getWorkoutHistory(userId, limit = 50) {
         // id breaks ties: two sessions logged in the same instant share a finished_at, and
         // without a deterministic tiebreak their order — and the "Prev" lookup that walks
         // this array — becomes arbitrary.
-        `SELECT * FROM workouts WHERE user_id = $1 ORDER BY finished_at DESC, id DESC LIMIT $2`,
+        `SELECT * FROM workouts WHERE user_id = $1 AND deleted_at IS NULL ORDER BY finished_at DESC, id DESC LIMIT $2`,
         [userId, limit]
     );
     if (ws.rows.length === 0) return [];
 
     const ids = ws.rows.map(r => r.id);
     const ss = await db.query(
-        `SELECT * FROM workout_sets WHERE workout_id = ANY($1::int[])
+        `SELECT * FROM workout_sets WHERE workout_id = ANY($1::int[]) AND deleted_at IS NULL
          ORDER BY workout_id, exercise_order, set_number`,
         [ids]
     );
@@ -331,14 +332,43 @@ async function getSetsForMetrics(userId) {
     const r = await db.query(
         `SELECT w.id AS workout_id, w.finished_at, w.cycle_id, w.week_number,
                 s.exercise_name, s.weight_value, s.weight_unit, s.is_bodyweight,
-                s.reps_value, s.swapped_from
+                s.reps_value, s.swapped_from, w.day_index, w.day_name
            FROM workouts w
            JOIN workout_sets s ON s.workout_id = w.id
-          WHERE w.user_id = $1
+          WHERE w.user_id = $1 AND w.deleted_at IS NULL AND s.deleted_at IS NULL
           ORDER BY w.finished_at ASC, w.id ASC, s.exercise_order ASC, s.set_number ASC`,
         [userId]
     );
     return r.rows;
+}
+
+/**
+ * Saves a finished session. Idempotent when the caller supplies a clientId: the same session
+ * posted twice (a double tap, a retry, a device re-uploading what it holds) returns the original
+ * and creates nothing. Soft-deleted sessions keep their id, so a stale device cannot bring a
+ * deleted session back by re-uploading it.
+ */
+async function appendWorkout(userId, workout) {
+    const clientId = workout.clientId ? String(workout.clientId).slice(0, 200) : null;
+    const existing = async () => {
+        const r = await db.query('SELECT * FROM workouts WHERE user_id = $1 AND client_id = $2', [userId, clientId]);
+        return r.rows[0] ? Object.assign({}, r.rows[0], { duplicate: true }) : null;
+    };
+
+    if (clientId) {
+        const found = await existing();
+        if (found) return found;
+    }
+    try {
+        return await insertWorkout(userId, workout, clientId);
+    } catch (err) {
+        // Two identical requests racing: the unique index lets exactly one win.
+        if (clientId && err && err.code === '23505') {
+            const found = await existing();
+            if (found) return found;
+        }
+        throw err;
+    }
 }
 
 /**
@@ -353,7 +383,7 @@ async function getKnownExerciseNames(userId, limit = 60) {
         `SELECT s.exercise_name, MAX(w.finished_at) AS last_seen
            FROM workouts w
            JOIN workout_sets s ON s.workout_id = w.id
-          WHERE w.user_id = $1
+          WHERE w.user_id = $1 AND w.deleted_at IS NULL AND s.deleted_at IS NULL
           GROUP BY s.exercise_name
           ORDER BY last_seen DESC
           LIMIT $2`,
@@ -415,7 +445,220 @@ async function saveWeeklyReview(userId, cycleId, weekNumber, review, sessions) {
     return r.rows[0];
 }
 
+/* ------------------------------------------------------- correcting history */
+//
+// Corrections are SOFT. A deleted set or session keeps its row (deleted_at) and an edit keeps its
+// old values in workout_edits, so correcting a mistake never destroys what the lifter logged, and
+// any correction can be reversed by hand. Every read of history ignores soft-deleted rows.
+
+class EditError extends Error {
+    constructor(message, status = 400) { super(message); this.status = status; }
+}
+
+const audit = (client, userId, workoutId, setId, action, before, after) => client.query(
+    `INSERT INTO workout_edits (user_id, workout_id, set_id, action, before, after) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [userId, workoutId, setId, action,
+        before === null || before === undefined ? null : JSON.stringify(before),
+        after === null || after === undefined ? null : JSON.stringify(after)]
+);
+
+async function ownedWorkout(client, userId, workoutId) {
+    const r = await client.query(
+        `SELECT * FROM workouts WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`, [workoutId, userId]
+    );
+    if (!r.rows[0]) throw new EditError('That workout was not found', 404);
+    return r.rows[0];
+}
+
+async function ownedSet(client, userId, workoutId, setId) {
+    await ownedWorkout(client, userId, workoutId);
+    const r = await client.query(
+        `SELECT * FROM workout_sets WHERE id = $1 AND workout_id = $2 AND deleted_at IS NULL`, [setId, workoutId]
+    );
+    if (!r.rows[0]) throw new EditError('That set was not found', 404);
+    return r.rows[0];
+}
+
+// An edit is deliberate, unlike a number typed mid-set, so it is held to a stricter standard than
+// the logger: reps must be a number, and weight must be a number or BW. Logging stays forgiving.
+function parseEdit(weight, reps) {
+    const w = parseWeight(weight === undefined || weight === null || String(weight).trim() === '' ? 'BW' : weight);
+    const r = parseReps(reps);
+    if (r.value === null) throw new EditError('Reps must be a number');
+    if (r.value > 1000) throw new EditError('That rep count looks wrong');
+    if (!w.isBodyweight && w.value === null) throw new EditError('Weight must be a number, or BW for bodyweight');
+    if (w.value !== null && w.value > 5000) throw new EditError('That weight looks wrong');
+    return { w, r };
+}
+
+const rawOf = s => ({ weight: s.weight_raw, reps: s.reps_raw });
+
+/** Every live workout, with the ids needed to correct it. Oldest first. */
+async function listWorkouts(userId) {
+    const ws = await db.query(
+        `SELECT id, cycle_id, week_number, day_index, day_name, plan_name, finished_at
+           FROM workouts WHERE user_id = $1 AND deleted_at IS NULL
+          ORDER BY finished_at ASC, id ASC`,
+        [userId]
+    );
+    if (ws.rows.length === 0) return [];
+    const ids = ws.rows.map(w => w.id);
+    const ss = await db.query(
+        `SELECT id, workout_id, exercise_name, exercise_order, set_number, weight_raw, reps_raw,
+                weight_value, is_bodyweight, reps_value, edited_at
+           FROM workout_sets WHERE workout_id = ANY($1::int[]) AND deleted_at IS NULL
+          ORDER BY workout_id, exercise_order, set_number, id`,
+        [ids]
+    );
+
+    const byWorkout = new Map(ids.map(id => [id, new Map()]));
+    for (const s of ss.rows) {
+        const m = byWorkout.get(s.workout_id);
+        const key = s.exercise_order + '|' + s.exercise_name;
+        if (!m.has(key)) m.set(key, { name: s.exercise_name, sets: [] });
+        m.get(key).sets.push({
+            id: s.id,
+            set: s.set_number,
+            weight: s.is_bodyweight && !s.weight_raw ? 'BW' : s.weight_raw,
+            reps: s.reps_raw,
+            isBodyweight: s.is_bodyweight,
+            edited: !!s.edited_at
+        });
+    }
+
+    // Two sessions with the same day and the same instant are what a repeated upload produces.
+    const seen = new Map();
+    return ws.rows.map(w => {
+        const stamp = new Date(w.finished_at).getTime() + '|' + (w.day_name || '');
+        const first = seen.get(stamp);
+        if (first === undefined) seen.set(stamp, w.id);
+        return {
+            id: w.id,
+            cycleId: w.cycle_id,
+            weekNumber: w.week_number,
+            dayIndex: w.day_index,
+            dayName: w.day_name,
+            date: w.finished_at,
+            possibleDuplicateOf: first === undefined ? null : first,
+            exercises: Array.from(byWorkout.get(w.id).values())
+        };
+    });
+}
+
+async function updateSet(userId, workoutId, setId, input) {
+    return db.withTransaction(async client => {
+        const before = await ownedSet(client, userId, workoutId, setId);
+        const { w, r } = parseEdit(input.weight, input.reps);
+        await client.query(
+            `UPDATE workout_sets
+                SET weight_value = $2, weight_unit = $3, is_bodyweight = $4, reps_value = $5,
+                    weight_raw = $6, reps_raw = $7, edited_at = now()
+              WHERE id = $1`,
+            [setId, w.value, w.unit, w.isBodyweight, r.value, w.isBodyweight ? 'BW' : w.raw, r.raw]
+        );
+        await audit(client, userId, workoutId, setId, 'edit_set', rawOf(before), { weight: w.isBodyweight ? 'BW' : w.raw, reps: r.raw });
+    });
+}
+
+/** Removes a set; removes the session too if that was its last set, so no empty sessions linger. */
+async function deleteSet(userId, workoutId, setId) {
+    return db.withTransaction(async client => {
+        const before = await ownedSet(client, userId, workoutId, setId);
+        await client.query(`UPDATE workout_sets SET deleted_at = now() WHERE id = $1`, [setId]);
+        await audit(client, userId, workoutId, setId, 'delete_set', Object.assign({ exercise: before.exercise_name }, rawOf(before)), null);
+
+        const left = await client.query(
+            `SELECT 1 FROM workout_sets WHERE workout_id = $1 AND deleted_at IS NULL LIMIT 1`, [workoutId]
+        );
+        if (left.rows.length === 0) {
+            await client.query(`UPDATE workouts SET deleted_at = now() WHERE id = $1`, [workoutId]);
+            await audit(client, userId, workoutId, null, 'delete_workout', { reason: 'last set removed' }, null);
+            return { workoutRemoved: true };
+        }
+        return { workoutRemoved: false };
+    });
+}
+
+async function addSet(userId, workoutId, input) {
+    return db.withTransaction(async client => {
+        await ownedWorkout(client, userId, workoutId);
+        const name = String(input.exercise || '').trim();
+        const existing = await client.query(
+            `SELECT exercise_order, MAX(set_number) AS last, MAX(swapped_from) AS swapped_from
+               FROM workout_sets WHERE workout_id = $1 AND exercise_name = $2
+              GROUP BY exercise_order ORDER BY exercise_order LIMIT 1`,
+            [workoutId, name]
+        );
+        if (!existing.rows[0]) throw new EditError('That movement is not in this workout', 404);
+
+        const { w, r } = parseEdit(input.weight, input.reps);
+        const ins = await client.query(
+            `INSERT INTO workout_sets
+                (workout_id, exercise_name, exercise_order, set_number, weight_value, weight_unit,
+                 is_bodyweight, reps_value, weight_raw, reps_raw, swapped_from)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+            [workoutId, name, existing.rows[0].exercise_order, Number(existing.rows[0].last) + 1,
+                w.value, w.unit, w.isBodyweight, r.value, w.isBodyweight ? 'BW' : w.raw, r.raw, existing.rows[0].swapped_from || null]
+        );
+        await audit(client, userId, workoutId, ins.rows[0].id, 'add_set', null, { exercise: name, weight: w.isBodyweight ? 'BW' : w.raw, reps: r.raw });
+        return { id: ins.rows[0].id };
+    });
+}
+
+async function deleteWorkout(userId, workoutId) {
+    return db.withTransaction(async client => {
+        const w = await ownedWorkout(client, userId, workoutId);
+        await client.query(`UPDATE workout_sets SET deleted_at = now() WHERE workout_id = $1 AND deleted_at IS NULL`, [workoutId]);
+        await client.query(`UPDATE workouts SET deleted_at = now() WHERE id = $1`, [workoutId]);
+        await audit(client, userId, workoutId, null, 'delete_workout', { week: w.week_number, day: w.day_name }, null);
+    });
+}
+
+/**
+ * Moves a session to another week. A session that was never attached to a cycle (it had no
+ * active cycle when it was saved) is attached to the active one, which is how an "unplaced"
+ * workout gets onto the scorecard.
+ */
+async function moveWorkout(userId, workoutId, weekNumber) {
+    return db.withTransaction(async client => {
+        const w = await ownedWorkout(client, userId, workoutId);
+        const week = Number(weekNumber);
+        if (!Number.isInteger(week) || week < 1) throw new EditError('Choose a week number');
+
+        let cycleId = w.cycle_id;
+        if (cycleId === null) {
+            const active = await client.query(`SELECT id FROM cycles WHERE user_id = $1 AND status = 'active' LIMIT 1`, [userId]);
+            if (!active.rows[0]) throw new EditError('There is no active cycle to attach this workout to');
+            cycleId = active.rows[0].id;
+        }
+        const c = await client.query(`SELECT total_weeks FROM cycles WHERE id = $1`, [cycleId]);
+        if (c.rows[0] && week > Number(c.rows[0].total_weeks)) throw new EditError('That cycle only has ' + c.rows[0].total_weeks + ' weeks');
+
+        await client.query(`UPDATE workouts SET week_number = $2, cycle_id = $3 WHERE id = $1`, [workoutId, week, cycleId]);
+        await audit(client, userId, workoutId, null, 'move_workout', { week: w.week_number, cycleId: w.cycle_id }, { week, cycleId });
+    });
+}
+
+/** Renames one movement within one session, for a movement logged under the wrong name. */
+async function renameExercise(userId, workoutId, from, to) {
+    return db.withTransaction(async client => {
+        await ownedWorkout(client, userId, workoutId);
+        const next = String(to || '').trim();
+        if (!next) throw new EditError('A movement needs a name');
+        if (next.length > 120) throw new EditError('That name is too long');
+        const r = await client.query(
+            `UPDATE workout_sets SET exercise_name = $3, edited_at = now()
+              WHERE workout_id = $1 AND exercise_name = $2 AND deleted_at IS NULL
+          RETURNING id`,
+            [workoutId, String(from || ''), next]
+        );
+        if (r.rows.length === 0) throw new EditError('That movement is not in this workout', 404);
+        await audit(client, userId, workoutId, null, 'rename_exercise', { name: from }, { name: next });
+    });
+}
+
 module.exports = {
+    listWorkouts, updateSet, deleteSet, addSet, deleteWorkout, moveWorkout, renameExercise, EditError,
     getWeeklyReview, saveWeeklyReview,
     getActiveCycle, startCycle, endActiveCycle, advanceCycleWeek, setCycleLength,
     setCycleProgram, setTrackingOverride, getPreviousCycles,

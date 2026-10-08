@@ -81,6 +81,7 @@
         .ms-dense .ms-cell { height: 28px; border-radius: 7px; font-size: 11px; }
         .ms-upcoming { border: 1px dashed #222; color: #555; }
         .ms-missed { border: 1px dashed #3a3a3a; color: #555; }
+        .ms-na { border: 1px solid transparent; }
         .ms-deload { background: rgba(204,154,31,.16); color: #e0b341; border: 1px solid rgba(204,154,31,.45); }
         .ms-tag { display: inline-block; font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 999px; border: 1px solid #222; color: #888; }
         .ms-tag.ms-go { color: #199e70; border-color: rgba(25,158,112,.5); }
@@ -129,6 +130,40 @@
         .wr-link { background: none; border: 0; color: #888; font: inherit; font-size: 11px; text-decoration: underline; cursor: pointer; padding: 0; }
         .wr-link:disabled { opacity: .6; cursor: default; }
         .wr-disclaimer { font-size: 10.5px; color: #555; line-height: 1.5; margin: 10px 0 0; }
+            /* Logged workouts (correcting history). App palette; no new hues. */
+        .hs-intro { font-size: 12.5px; color: #888; line-height: 1.6; margin: 0 0 4px; }
+        .hs-note { font-size: 11.5px; color: #888; line-height: 1.5; margin: -4px 0 10px; }
+        .hs-error { font-size: 12px; color: #f08a5d; line-height: 1.5; margin: 12px 0; }
+        .hs-card { background: #0A0A0A; border: 1px solid #222; border-radius: 20px; padding: 14px 16px; margin-bottom: 10px; }
+        .hs-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+        .hs-title { font-size: 14px; font-weight: 600; color: #fff; }
+        .hs-date { font-size: 11px; color: #888; margin-top: 2px; }
+        .hs-dup { flex: none; font-size: 10px; font-weight: 600; color: #cc9a1f; border: 1px solid rgba(204,154,31,.55); border-radius: 999px; padding: 3px 8px; }
+        .hs-ex { border-top: 1px solid #1c1c1c; padding: 10px 0 4px; }
+        .hs-ex-head, .hs-rename { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .hs-ex-name { font-size: 13px; font-weight: 600; color: #EDEDED; }
+        .hs-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; color: #EDEDED; }
+        .hs-row.hs-open { flex-wrap: wrap; background: #141414; border-radius: 12px; padding: 10px; margin: 4px 0; }
+        .hs-n { flex: none; width: 20px; color: #888; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+        .hs-val { flex: 1; font-variant-numeric: tabular-nums; }
+        .hs-val em { font-style: normal; font-size: 9.5px; color: #888; border: 1px solid #333; border-radius: 999px; padding: 1px 6px; margin-left: 6px; }
+        .hs-inputs { display: flex; gap: 8px; flex: 1; }
+        .hs-inputs label { flex: 1; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: #888; display: flex; flex-direction: column; gap: 4px; }
+        .hs-inputs input, .hs-rename input { width: 100%; background: #0A0A0A; border: 1px solid #333; border-radius: 10px; padding: 9px; font: inherit; font-size: 14px; color: #fff; text-align: center; }
+        .hs-rename input { text-align: left; flex: 1; }
+        .hs-actions { display: flex; gap: 8px; align-items: center; width: 100%; justify-content: flex-end; }
+        .hs-save { background: #fff; color: #000; border: 0; border-radius: 10px; padding: 8px 14px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+        .hs-del { background: none; border: 0; color: #d95926; font: inherit; font-size: 12px; cursor: pointer; padding: 6px 4px; }
+        .hs-link { background: none; border: 0; color: #888; font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; padding: 6px 4px; }
+        .hs-add { display: block; margin: 2px 0 6px 30px; }
+        .hs-save:disabled, .hs-del:disabled, .hs-link:disabled { opacity: .5; cursor: default; }
+        .hs-foot { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #1c1c1c; margin-top: 8px; padding-top: 10px; }
+        .hs-move { font-size: 11px; color: #888; display: flex; align-items: center; gap: 8px; }
+        .hs-move select { background: #141414; border: 1px solid #333; border-radius: 10px; color: #fff; padding: 6px 8px; font: inherit; font-size: 13px; }
+        .ms-alert { background: #141414; border: 1px solid rgba(204,154,31,.45); border-radius: 18px; padding: 14px 16px; margin-top: 14px; font-size: 12.5px; color: #EDEDED; line-height: 1.55; }
+        .ms-alert b { color: #fff; }
+        .ms-alert .ms-alert-list { color: #999; margin: 4px 0 10px; }
+        .ms-edit { width: 100%; margin-top: 16px; background: #0A0A0A; color: #fff; border: 1px solid #222; border-radius: 16px; padding: 13px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
     </style>
 </head>
 <body class="h-screen flex items-center justify-center p-4">
@@ -351,6 +386,15 @@
             <div id="metrics-body" class="p-5">
                 <p class="text-sm text-textMuted">Loading...</p>
             </div>
+        </div>
+
+        <!-- SCREEN 6: LOGGED WORKOUTS (correct what was logged) -->
+        <div id="screen-history" class="screen flex-col h-full bg-background overflow-y-auto pb-24">
+            <div class="p-6 pt-8 flex items-center gap-4 sticky top-0 bg-background/80 backdrop-blur-md z-20 border-b border-borderSubtle">
+                <button onclick="nav('screen-metrics', 'nav-metrics')" class="text-textMuted hover:text-white text-lg leading-none" aria-label="Back to Progress">←</button>
+                <h1 class="text-2xl font-semibold tracking-tight text-white">Logged workouts</h1>
+            </div>
+            <div id="history-body" class="p-5"><p class="text-sm text-textMuted">Loading...</p></div>
         </div>
 
         <!-- Persistent Bottom Nav -->
@@ -652,6 +696,7 @@
 
             if (screenId === 'screen-journal') { renderJournalEntries(); loadWeeklyReview(); }
             if (screenId === 'screen-metrics') loadMetrics();
+            if (screenId === 'screen-history') loadHistory();
 
             if(navBtnId) {
                 document.querySelectorAll('.nav-btn').forEach(b => {
@@ -1142,6 +1187,8 @@
 
         function msCell(c, m, i) {
             const N = c.totalWeeks, w = m.weeks[i];
+            // Before the lift was first logged is "not started", not "missed".
+            if (!w && i + 1 < m.baselineWeek) return '<div class="ms-cell ms-na" aria-hidden="true"></div>';
             if (!w) {
                 return i + 1 <= c.loggedThrough
                     ? `<div class="ms-cell ms-missed" title="Week ${i + 1}: not logged">–</div>`
@@ -1177,16 +1224,27 @@
 
             let total;
             if (m.tracked) total = `${escapeHtml(msPct(m.changePct))}<small>est. strength</small>`;
-            else if (first !== last) total = `${escapeHtml(msSigned(last.reps - first.reps))} reps<small>vs week ${first.week}</small>`;
+            else if (m.repsChange !== null && m.repsChange !== undefined) total = `${escapeHtml(msSigned(m.repsChange))} reps<small>per session vs week ${first.week}</small>`;
             else total = `<small>first week</small>`;
 
             const tags = (m.readyForMore ? '<span class="ms-tag ms-go">Add weight next</span> ' : '')
                 + (m.stalling ? '<span class="ms-tag ms-warn">Stalling</span>' : '');
-            const sub = tags || (m.range ? `${m.range.min}–${m.range.max} rep range` : (m.tracked ? '' : 'Bodyweight'));
+            // "Bodyweight" only for a lift that was never given a weight, not any lift with one week so far.
+            const weighted = logged.some(w => w.top !== null);
+            const sub = tags || (m.range ? `${m.range.min}–${m.range.max} rep range` : (weighted ? '' : 'Bodyweight'));
 
-            const detail = open ? `<div class="ms-detail">${logged.map(w =>
-                `<div><span>Week ${w.week}${w.deload ? ' · deload' : ''}</span><span>${escapeHtml(msSets(w))}</span></div>`).join('')}
-                ${m.range ? `<div class="ms-range"><span>Target range ${m.range.min}–${m.range.max} reps</span><span></span></div>` : ''}</div>` : '';
+            // One line per SESSION, not per week: a lift done on two days shows both, so a session
+            // saved twice is visible for what it is instead of looking like extra sets.
+            const lines = logged.flatMap(w => {
+                const parts = (w.sessions && w.sessions.length) ? w.sessions : [{ dayName: null, sets: w.sets }];
+                return parts.map(s => {
+                    const day = parts.length > 1 && s.dayName ? ' · ' + historyDay(s.dayName) : '';
+                    return `<div><span>Week ${w.week}${escapeHtml(day)}${w.deload ? ' · deload' : ''}</span><span>${escapeHtml(msSets(s))}</span></div>`;
+                });
+            });
+            const detail = open ? `<div class="ms-detail">${lines.join('')}
+                ${m.range ? `<div class="ms-range"><span>Target range ${m.range.min}–${m.range.max} reps</span><span></span></div>` : ''}
+                <div class="ms-range"><span></span><button class="hs-link" onclick="event.stopPropagation(); openHistory()">Edit these sets</button></div></div>` : '';
 
             return `<div class="ms-row" role="button" tabindex="0" aria-expanded="${open}" onclick="toggleMetricsLift(${idx})">
                 <div class="ms-row-top"><div><div class="ms-name">${escapeHtml(m.name)}</div><div class="ms-sub">${sub}</div></div><div class="ms-total">${total}</div></div>
@@ -1221,6 +1279,17 @@
                 <div class="ms-grid ms-stripe" style="--n:${N};--gap:${gap}px">${mini}</div>${body}</div>`;
         }
 
+        // Logged work that sits on no week cannot be drawn on the scorecard, but it must never be
+        // invisible. Say so, and point at where it can be put on a week.
+        function msUnplaced(c) {
+            if (!c.unplaced || !c.unplaced.length) return '';
+            const n = c.unplaced.length;
+            const names = c.unplaced.slice(0, 4).map(u => escapeHtml(u.name)).join(', ') + (n > 4 ? ' and ' + (n - 4) + ' more' : '');
+            return `<div class="ms-alert"><b>${n} logged ${n === 1 ? 'movement is' : 'movements are'} not on any week</b>
+                <div class="ms-alert-list">${names}</div>
+                <button class="hs-save" onclick="openHistory()">Put ${n === 1 ? 'it' : 'them'} on a week</button></div>`;
+        }
+
         function metricsHtml(data, ui) {
             const c = data && data.cycle;
             const empty = msg => `<div class="ms-card" style="text-align:center;padding:32px 20px">
@@ -1228,7 +1297,7 @@
                 <p class="text-sm text-textMuted leading-relaxed">${escapeHtml(msg[1])}</p></div>`;
 
             if (!c) return empty(['No active cycle', 'Build a plan and your progress will show up here as you train.']);
-            if (!c.movements.length) return empty(['Nothing logged yet', 'Finish a workout and your numbers will start showing up here.']);
+            if (!c.movements.length) return empty(['Nothing logged yet', 'Finish a workout and your numbers will start showing up here.']) + msUnplaced(c);
 
             const N = c.totalWeeks, gap = N > 8 ? 3 : 4;
             const heads = Array.from({ length: N }, (_, i) =>
@@ -1242,11 +1311,13 @@
             const totals = data.counts ? `<p class="ms-foot">${data.counts.allTime} workouts and ${data.totalSets} sets logged in all.</p>` : '';
 
             return `${msPanel(c)}
+                ${msUnplaced(c)}
                 <div class="ms-sec" style="margin-top:22px">Every lift · whole cycle</div>
                 <div class="ms-key">${key}</div>
                 <div class="ms-grid ms-band" style="--n:${N};--gap:${gap}px">${msBand(c)}</div>
                 <div class="ms-grid ms-wkhead" style="--n:${N};--gap:${gap}px">${heads}</div>
                 ${rows}${msGroup(c, ui.groupOpen)}
+                <button class="ms-edit" onclick="openHistory()">Edit logged workouts</button>
                 <p class="ms-note">Strength is the average change in estimated one-rep max (best set, Epley formula) across your lifts, each counted equally. Bodyweight work is shown by reps and left out of that number. Tap a lift to see its sets.</p>
                 ${totals}`;
         }
@@ -1329,6 +1400,7 @@
             // Resuming keeps the original start time, so the timer shows real elapsed time
             // rather than restarting from zero.
             workoutStartTime = opts.resumeFrom ? (opts.resumeFrom.startedAt || Date.now()) : Date.now();
+            workoutClientId = (opts.resumeFrom && opts.resumeFrom.clientId) || newClientId();
 
             // Assignment rather than addEventListener: startWorkout runs again on every
             // resume and on every new session, and listeners would stack.
@@ -1504,6 +1576,16 @@
 
         const ACTIVE_WORKOUT_KEY = 'activeWorkout';
 
+        // Every workout carries an id made when it STARTS, and kept through a reload. Saving the same
+        // session twice (a double tap, a retry, the "restore what this device holds" routine) then
+        // returns the first one instead of adding a second copy.
+        let workoutClientId = null;
+        let finishingWorkout = false;
+        function newClientId() {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+            return 'w-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+        }
+
         // Beyond this, a workout is not "in progress" -- it is abandoned. Resuming silently
         // would attach today's sets to a session from two days ago.
         const RESUME_AUTO_HOURS = 6;
@@ -1530,6 +1612,7 @@
             try {
                 localStorage.setItem(ACTIVE_WORKOUT_KEY, JSON.stringify({
                     dayIndex: activeDayIndex,
+                    clientId: workoutClientId,
                     startedAt: workoutStartTime,
                     savedAt: Date.now(),
                     // Session-only swaps live only in memory, so without capturing names here
@@ -1683,7 +1766,18 @@
             nav('screen-plan', 'nav-plan');
         }
 
+        // A second tap while the first is still saving must not save a second copy.
         async function finishWorkout() {
+            if (finishingWorkout) return;
+            finishingWorkout = true;
+            try {
+                await finishWorkoutOnce();
+            } finally {
+                finishingWorkout = false;
+            }
+        }
+
+        async function finishWorkoutOnce() {
             const { checked, typedButUnchecked } = collectWorkoutRows();
             const n = typedButUnchecked.length;
             const plural = n === 1 ? 'set has' : 'sets have';
@@ -1747,6 +1841,8 @@
             });
 
             const workoutLog = {
+                clientId: workoutClientId || newClientId(),
+                dayIndex: activeDayIndex,
                 date: new Date().toISOString(),
                 planName: currentWorkoutPlan.planName,
                 dayName: day.dayName,
@@ -1773,6 +1869,7 @@
 
             // Only after the workout is safely recorded.
             clearActiveWorkout();
+            workoutClientId = null;
             workoutStartTime = null;
 
             alert('Workout saved - ' + checked.length + ' ' + (checked.length === 1 ? 'set' : 'sets') + ' logged.');
@@ -2100,6 +2197,199 @@
                 <div class="wr-sec">Focus next week</div>${focus}
                 <div class="wr-foot"><span>${escapeHtml(basis)}</span>${state.stale ? '' : `<button onclick="requestWeeklyReview()" class="wr-link" ${ui.busy ? 'disabled' : ''}>${ui.busy ? 'Refreshing...' : 'Refresh'}</button>`}</div>
                 <p class="wr-disclaimer">General coaching, not medical advice. Pain that is sharp, getting worse, or lasting is worth getting checked.</p>`);
+        }
+
+        // --- Logged workouts: correcting history ----------------------------------------
+        //
+        // A set typed wrong at the gym, a session saved twice, a lift logged on the wrong week: all
+        // of these used to be permanent, because history was append-only. This screen lists
+        // everything that was logged and lets any of it be corrected. Corrections are soft on the
+        // server (nothing is erased for good, edits are recorded), and every one is reflected in
+        // Progress straight away.
+
+        let historyData = null;       // { workouts, cycle } from GET /api/workouts
+        let historyEdit = null;       // what is open: { kind: 'set'|'add'|'rename', workoutId, setId, exIdx }
+        let historyBusy = false;
+        let historyError = null;
+
+        function openHistory() { nav('screen-history', 'nav-metrics'); }
+
+        async function historyFetch(method, url, body) {
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                body: body === undefined ? undefined : JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Could not save that change');
+            return data;
+        }
+
+        async function loadHistory() {
+            try {
+                historyData = await historyFetch('GET', '/api/workouts');
+                historyError = null;
+            } catch (e) {
+                historyError = e.message;
+            }
+            renderHistory();
+        }
+
+        // The phone keeps its own copy of history (for "last time" and for syncing). After a
+        // correction it has to match the server, or the old numbers would come straight back.
+        async function refreshLocalHistory() {
+            try {
+                const d = await historyFetch('GET', '/api/user/data');
+                localStorage.setItem('workoutJournal', JSON.stringify(Array.isArray(d.workoutJournal) ? d.workoutJournal : []));
+            } catch (e) { /* the server copy is already right; this only tidies the local one */ }
+        }
+
+        async function historyChange(method, url, body) {
+            if (historyBusy) return false;
+            historyBusy = true;
+            historyError = null;
+            renderHistory();
+            try {
+                await historyFetch(method, url, body);
+                historyEdit = null;
+                historyData = await historyFetch('GET', '/api/workouts');
+                await refreshLocalHistory();
+                metricsCache = null;          // Progress must be rebuilt from the corrected history
+                return true;
+            } catch (e) {
+                historyError = e.message;
+                return false;
+            } finally {
+                historyBusy = false;
+                renderHistory();
+            }
+        }
+
+        function renderHistory() {
+            const box = document.getElementById('history-body');
+            if (box) box.innerHTML = historyHtml(historyData, { edit: historyEdit, busy: historyBusy, error: historyError });
+        }
+
+        function historyOpenEditor(kind, workoutId, setId, exIdx) {
+            historyEdit = { kind, workoutId, setId: setId || null, exIdx: exIdx === undefined ? null : exIdx };
+            historyError = null;
+            renderHistory();
+        }
+        function historyCancel() { historyEdit = null; historyError = null; renderHistory(); }
+
+        const historyVal = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+        const historyExercise = (workoutId, exIdx) => {
+            const w = historyData && historyData.workouts.find(x => x.id === workoutId);
+            return w && w.exercises[exIdx] ? w.exercises[exIdx].name : '';
+        };
+
+        function historySaveSet(workoutId, setId) {
+            return historyChange('PATCH', `/api/workouts/${workoutId}/sets/${setId}`, { weight: historyVal('hist-weight'), reps: historyVal('hist-reps') });
+        }
+        function historyDeleteSet(workoutId, setId) {
+            if (!confirm('Delete this set? It will be taken out of your progress.')) return;
+            return historyChange('DELETE', `/api/workouts/${workoutId}/sets/${setId}`);
+        }
+        function historyAddSet(workoutId, exIdx) {
+            return historyChange('POST', `/api/workouts/${workoutId}/sets`, { exercise: historyExercise(workoutId, exIdx), weight: historyVal('hist-weight'), reps: historyVal('hist-reps') });
+        }
+        function historyRename(workoutId, exIdx) {
+            return historyChange('PATCH', `/api/workouts/${workoutId}/exercise`, { from: historyExercise(workoutId, exIdx), to: historyVal('hist-name') });
+        }
+        function historyMove(workoutId, week) {
+            if (!week) return;
+            return historyChange('PATCH', `/api/workouts/${workoutId}`, { weekNumber: Number(week) });
+        }
+        function historyDeleteWorkout(workoutId) {
+            if (!confirm('Delete this whole session? Its sets will be taken out of your progress.')) return;
+            return historyChange('DELETE', `/api/workouts/${workoutId}`);
+        }
+
+        // "35" reads as "35 lb"; anything the lifter typed in full ("20 kg", "BW") is left as typed.
+        const historyWeight = w => (w === null || w === undefined || w === '') ? 'BW' : (/^\d+(\.\d+)?$/.test(String(w)) ? w + ' lb' : String(w));
+        const historyDay = d => String(d || 'Workout').split(/\s[-–—:]\s/)[0].trim().slice(0, 40);
+
+        function historyHtml(state, ui) {
+            const err = ui.error ? `<p class="hs-error">${escapeHtml(ui.error)}</p>` : '';
+            if (!state) {
+                return ui.error
+                    ? `${err}<button onclick="loadHistory()" class="wr-btn wr-btn-ghost">Retry</button>`
+                    : '<p class="text-sm text-textMuted">Loading...</p>';
+            }
+            if (!state.workouts.length) {
+                return '<div class="ms-card" style="text-align:center;padding:32px 20px"><h3 class="text-white font-semibold mb-2">Nothing logged yet</h3><p class="text-sm text-textMuted leading-relaxed">Finish a workout and it will be listed here, where you can correct it.</p></div>';
+            }
+
+            const cycle = state.cycle;
+            const dis = ui.busy ? ' disabled' : '';
+            const stamp = d => { const x = new Date(d); return isNaN(x) ? '' : x.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); };
+            const editing = (kind, wid, extra) => ui.edit && ui.edit.kind === kind && ui.edit.workoutId === wid && (extra === undefined || ui.edit[extra[0]] === extra[1]);
+
+            const inputs = (weight, reps) => `
+                <div class="hs-inputs">
+                    <label>Weight<input id="hist-weight" type="text" inputmode="decimal" value="${escapeAttr(weight)}" placeholder="BW"></label>
+                    <label>Reps<input id="hist-reps" type="text" inputmode="numeric" value="${escapeAttr(reps)}"></label>
+                </div>`;
+
+            const session = w => {
+                const weeks = cycle ? Array.from({ length: cycle.totalWeeks }, (_, i) => i + 1) : [];
+                const weekSelect = `<label class="hs-move">Week
+                    <select onchange="historyMove(${w.id}, this.value)"${dis}>
+                        ${w.cycleId === null || w.weekNumber === null ? '<option value="">Choose…</option>' : ''}
+                        ${weeks.map(n => `<option value="${n}"${n === w.weekNumber && w.cycleId === cycle.id ? ' selected' : ''}>${n}</option>`).join('')}
+                    </select></label>`;
+
+                const exercises = w.exercises.map((ex, exIdx) => {
+                    const rows = ex.sets.map(s => {
+                        if (editing('set', w.id, ['setId', s.id])) {
+                            return `<div class="hs-row hs-open"><span class="hs-n">${s.set}</span>${inputs(s.isBodyweight ? '' : String(s.weight || '').replace(/\s*(lbs?|pounds?)$/i, ''), s.reps)}
+                                <div class="hs-actions"><button class="hs-save" onclick="historySaveSet(${w.id}, ${s.id})"${dis}>Save</button>
+                                <button class="hs-del" onclick="historyDeleteSet(${w.id}, ${s.id})"${dis}>Delete set</button>
+                                <button class="hs-link" onclick="historyCancel()"${dis}>Cancel</button></div></div>`;
+                        }
+                        return `<div class="hs-row"><span class="hs-n">${s.set}</span>
+                            <span class="hs-val">${escapeHtml(historyWeight(s.weight))} × ${escapeHtml(s.reps)}${s.edited ? ' <em>edited</em>' : ''}</span>
+                            <button class="hs-link" onclick="historyOpenEditor('set', ${w.id}, ${s.id})"${dis}>Edit</button></div>`;
+                    }).join('');
+
+                    const add = editing('add', w.id, ['exIdx', exIdx])
+                        ? `<div class="hs-row hs-open"><span class="hs-n">+</span>${inputs(ex.sets.length ? String(ex.sets[ex.sets.length - 1].weight || '').replace(/\s*(lbs?|pounds?)$/i, '') : '', '')}
+                            <div class="hs-actions"><button class="hs-save" onclick="historyAddSet(${w.id}, ${exIdx})"${dis}>Add set</button>
+                            <button class="hs-link" onclick="historyCancel()"${dis}>Cancel</button></div></div>`
+                        : `<button class="hs-link hs-add" onclick="historyOpenEditor('add', ${w.id}, null, ${exIdx})"${dis}>+ Add a set</button>`;
+
+                    const head = editing('rename', w.id, ['exIdx', exIdx])
+                        ? `<div class="hs-rename"><input id="hist-name" type="text" value="${escapeAttr(ex.name)}" maxlength="120">
+                            <button class="hs-save" onclick="historyRename(${w.id}, ${exIdx})"${dis}>Save</button>
+                            <button class="hs-link" onclick="historyCancel()"${dis}>Cancel</button></div>`
+                        : `<div class="hs-ex-head"><span class="hs-ex-name">${escapeHtml(ex.name)}</span>
+                            <button class="hs-link" onclick="historyOpenEditor('rename', ${w.id}, null, ${exIdx})"${dis}>Rename</button></div>`;
+
+                    return `<div class="hs-ex">${head}${rows}${add}</div>`;
+                }).join('');
+
+                return `<div class="hs-card">
+                    <div class="hs-head"><div><div class="hs-title">${escapeHtml(historyDay(w.dayName))}</div><div class="hs-date">${escapeHtml(stamp(w.date))}</div></div>
+                        ${w.possibleDuplicateOf ? '<span class="hs-dup">Possible duplicate</span>' : ''}</div>
+                    ${exercises}
+                    <div class="hs-foot">${weekSelect}<button class="hs-del" onclick="historyDeleteWorkout(${w.id})"${dis}>Delete session</button></div>
+                </div>`;
+            };
+
+            // Newest first. Sessions on no week come first (they are the ones that show nowhere in
+            // Progress), then this cycle by week, then older cycles.
+            const newest = (a, b) => new Date(b.date) - new Date(a.date);
+            const loose = state.workouts.filter(w => w.cycleId === null || w.weekNumber === null).sort(newest);
+            const current = cycle ? state.workouts.filter(w => w.cycleId === cycle.id && w.weekNumber !== null) : [];
+            const earlier = state.workouts.filter(w => !loose.includes(w) && !current.includes(w)).sort(newest);
+            const weekNums = [...new Set(current.map(w => w.weekNumber))].sort((a, b) => b - a);
+
+            const section = (title, note, list) => `<div class="ms-sec" style="margin-top:22px">${escapeHtml(title)}</div>${note ? `<p class="hs-note">${escapeHtml(note)}</p>` : ''}${list.map(session).join('')}`;
+
+            return `<p class="hs-intro">Fix a set that was logged wrong, or a session that was saved twice. Changes show up in Progress straight away, and nothing is erased for good.</p>${err}
+                ${loose.length ? section('Not on any week', 'These do not appear in Progress. Choose a week to put them on the scorecard.', loose) : ''}
+                ${weekNums.map(n => section('Week ' + n, '', current.filter(w => w.weekNumber === n).sort(newest))).join('')}
+                ${earlier.length ? section('Earlier cycles', '', earlier) : ''}`;
         }
 
         if ('serviceWorker' in navigator) {

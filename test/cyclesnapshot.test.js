@@ -271,6 +271,74 @@ function req(method, p, body, token) {
     // A fully logged ordinary week is unaffected.
     check('non-deload weeks are not flagged', computeCycleSnapshot(sets(1, 1, 'Squat', 185, [8]), cycle(1, 6)).movements[0].weeks[0].deload, false);
 
+    console.log('\n=== a lift trained on two days ===\n');
+    // Weighted Pull-Up on Day 1 (4 sets) and Day 2 (3 sets), each with its own session.
+    const pull = (week, dayIdx, repsList, extra) => sets(1, week, 'Weighted Pull-Up', 35, repsList,
+        Object.assign({ workout_id: 1000 + week * 10 + dayIdx, day_index: dayIdx, day_name: dayIdx === 0 ? 'Day 1 - Squat' : 'Day 2 - Bench' }, extra || {}));
+    const wk1 = [...pull(1, 0, [6, 5, 5, 4]), ...pull(1, 1, [5, 5, 4])];
+    const doubleDay = [...pull(1, 0, [6, 5, 5, 4]), ...pull(1, 0, [5, 5, 4], { workout_id: 8888 })];
+
+    // Week 2 is half done: Day 1 has happened, Day 2 has not.
+    s = computeCycleSnapshot([...wk1, ...pull(2, 0, [6, 6, 5, 4])], cycle(1, 6));
+    let lift = s.movements[0];
+    check('a half-finished week is NOT a slip: Day 1 is compared with last week\'s Day 1', [lift.weeks[1].delta.kind, lift.weeks[1].delta.amount], ['reps', 1]);
+    check('week 1 keeps both sessions, listed separately', lift.weeks[0].sessions.map(x => x.dayName), ['Day 1 - Squat', 'Day 2 - Bench']);
+    check('each session lists its own sets', lift.weeks[0].sessions.map(x => x.sets.map(y => y.reps).join('')), ['6554', '554']);
+    check('week 2 so far has one', lift.weeks[1].sessions.length, 1);
+
+    s = computeCycleSnapshot([...wk1, ...pull(2, 0, [6, 6, 5, 4]), ...pull(2, 1, [5, 5, 4])], cycle(1, 6));
+    check('with both days done, Day 2 holding and Day 1 up is still progress', s.movements[0].weeks[1].delta.kind, 'reps');
+    check('the row\'s headline compares best session with best session: +1, not "−13 reps"', lift.repsChange, 1);
+    s = computeCycleSnapshot([...doubleDay, ...pull(2, 0, [6, 6, 5, 4])], cycle(1, 6));
+    check('a duplicated session does not turn into a false collapse in the headline', s.movements[0].repsChange, 1);
+    s = computeCycleSnapshot([...wk1, ...pull(2, 0, [6, 5, 5, 4]), ...pull(2, 1, [5, 5, 5])], cycle(1, 6));
+    check('reps gained on either day count', [s.movements[0].weeks[1].delta.kind, s.movements[0].weeks[1].delta.amount], ['reps', 1]);
+    s = computeCycleSnapshot([...wk1, ...pull(2, 0, [5, 5, 4, 4]), ...pull(2, 1, [5, 5, 4])], cycle(1, 6));
+    check('a day that slipped, with nothing else moving, is a slip', s.movements[0].weeks[1].delta.kind, 'down');
+    s = computeCycleSnapshot([...wk1, ...pull(2, 0, [6, 5, 5, 4], { weight_value: 40 })], cycle(1, 6));
+    check('a heavier day is progress whatever the other day did', s.movements[0].weeks[1].delta.kind, 'load');
+
+    console.log('\n=== the same day logged twice does not inflate anything ===\n');
+    // A duplicated upload: Day 1 appears twice in week 1, identical.
+    const doubled = [...pull(1, 0, [6, 5, 5, 4]), ...pull(1, 0, [6, 5, 5, 4], { workout_id: 9999 })];
+    s = computeCycleSnapshot([...doubled, ...pull(2, 0, [6, 6, 5, 4])], cycle(1, 6));
+    check('week 2 is still read as one rep better, not 21 reps worse', [s.movements[0].weeks[1].delta.kind, s.movements[0].weeks[1].delta.amount], ['reps', 1]);
+    check('the duplicate is visible, as two sessions', s.movements[0].weeks[0].sessions.length, 2);
+    s = computeCycleSnapshot([...pull(1, 0, [6, 5, 5, 4]), ...pull(1, 0, [5, 5, 4], { workout_id: 9999 }), ...pull(2, 0, [6, 6, 5, 4])], cycle(1, 6));
+    check('a partial repeat of the same day does not hide a real gain either', s.movements[0].weeks[1].delta.kind, 'reps');
+
+    console.log('\n=== when days cannot be told apart ===\n');
+    s = computeCycleSnapshot([...sets(1, 1, 'Row', 100, [10, 10]), ...sets(1, 2, 'Row', 100, [10, 10, 10])], cycle(1, 6));
+    check('with no day information the whole week is compared, as before', s.movements[0].weeks[1].delta.kind, 'reps');
+    const renamed = [...pull(1, 0, [6, 5, 5, 4], { day_index: null, day_name: 'Day 1 - Old name' }), ...pull(2, 0, [6, 6, 5, 4], { day_index: null, day_name: 'Day 1 - New name' })];
+    s = computeCycleSnapshot(renamed, cycle(1, 6));
+    check('a day that was renamed falls back to the whole week instead of showing nothing', s.movements[0].weeks[1].delta.kind, 'reps');
+
+    console.log('\n=== the order lifts are listed in ===\n');
+    const ordered = { days: [{ exercises: [{ name: 'Back Squat' }, { name: 'Flat Dumbbell Bench Press' }, { name: 'Row' }] }], weeks: [] };
+    s = computeCycleSnapshot([
+        ...sets(1, 1, 'Back Squat', 185, [5]), ...sets(1, 1, 'Row', 100, [10]), ...sets(1, 1, 'Mystery Lift', 20, [10]),
+        ...sets(1, 2, 'Flat Dumbbell Bench Press', 50, [10])
+    ], cycle(1, 6, ordered));
+    check('follows the programme, so a lift first done in week 2 is not buried at the bottom', s.movements.map(m => m.name), ['Back Squat', 'Flat Dumbbell Bench Press', 'Row', 'Mystery Lift']);
+    check('a lift first logged in week 2 is listed', s.movements.find(m => m.name === 'Flat Dumbbell Bench Press').weeks[1] !== null, true);
+    check('and is its own baseline', s.movements.find(m => m.name === 'Flat Dumbbell Bench Press').weeks[1].delta.kind, 'start');
+    s = computeCycleSnapshot([...sets(1, 1, 'Zed', 1, [1]), ...sets(1, 1, 'Alpha', 1, [1])], cycle(1, 6));
+    check('with no programme the order is the order they were first done', s.movements.map(m => m.name), ['Zed', 'Alpha']);
+
+    console.log('\n=== logged work that is on no week ===\n');
+    const loose = (name, extra) => sets(1, 1, name, 50, [10], Object.assign({ cycle_id: null, week_number: null, workout_id: 777 }, extra || {}));
+    s = computeCycleSnapshot([...sets(1, 1, 'Squat', 185, [5]), ...loose('Flat Dumbbell Bench Press')], cycle(1, 6));
+    check('work saved with no cycle is reported, not hidden', s.unplaced, [{ name: 'Flat Dumbbell Bench Press', sets: 1, sessions: 1 }]);
+    check('and is not on the scorecard', s.movements.map(m => m.name), ['Squat']);
+    s = computeCycleSnapshot([...sets(1, 1, 'Squat', 185, [5]), ...sets(1, null, 'Curls', 20, [10, 10], { week_number: null })], cycle(1, 6));
+    check('so is work in this cycle with no week', [s.unplaced[0].name, s.unplaced[0].sets], ['Curls', 2]);
+    s = computeCycleSnapshot([...sets(1, 1, 'Squat', 185, [5]), ...loose('Old Lift', { finished_at: '2020-01-01T00:00:00Z' })], Object.assign(cycle(1, 6), { created_at: '2026-06-01T00:00:00Z' }));
+    check('history from before this cycle began is not "missing"', s.unplaced, []);
+    s = computeCycleSnapshot([...sets(1, 1, 'Squat', 185, [5]), ...sets(2, 1, 'Squat', 100, [5])], cycle(1, 6));
+    check('another cycle\'s work is not "unplaced"', s.unplaced, []);
+    check('nothing loose means an empty list', computeCycleSnapshot(sets(1, 1, 'Squat', 185, [5]), cycle(1, 6)).unplaced, []);
+
     console.log('\n=== through the API, against real Postgres ===\n');
 
     const realListen = http.Server.prototype.listen;

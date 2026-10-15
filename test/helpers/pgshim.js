@@ -11,6 +11,9 @@ const Module = require('module');
 const { PGlite } = require('@electric-sql/pglite');
 
 function installPgShim() {
+    // A developer's .env may set LOCAL_DB=1 for click-through testing; tests must use
+    // their own in-memory database, never the persistent one. dotenv won't override this.
+    process.env.LOCAL_DB = '0';
     const pglite = new PGlite();
 
     const run = async (text, params) => {

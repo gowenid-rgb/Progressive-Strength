@@ -1,6 +1,8 @@
 // Loads .env and hard-fails on missing required vars. Must come first: every module
 // below assumes process.env is already populated.
 require('./config');
+// Local test mode only (LOCAL_DB=1): must run before db.js loads `pg`.
+if (process.env.LOCAL_DB === '1') require('./dev/localDb').install();
 const express = require('express');
 const path = require('path');
 const {

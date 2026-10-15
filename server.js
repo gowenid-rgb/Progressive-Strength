@@ -777,16 +777,17 @@ Schema requirement:
             if (basePlan && basePlan[k] !== undefined) updatedPlan[k] = basePlan[k];
         });
 
+        // Adjust program is the lifter consulting their coach about the whole programme, so by
+        // default the change carries into every later week (the programme is what those weeks
+        // are rendered from). Saying it is only for now keeps it to this week.
         const setChanges = adjust.diffSets(basePlan, updatedPlan);
-        const adjustment = { renamed, setChanges: [], appliedToFuture: [], thisWeekOnly: false };
-        if (setChanges.length) {
-            if (cycle && cycle.program && adjust.wantsFuture(feedback)) {
-                const { program: nextProgram, applied } = adjust.applySetChangesToProgram(cycle.program, setChanges);
-                if (applied.length) await repo.setCycleProgram(cycle.id, nextProgram);
-                adjustment.appliedToFuture = applied;
-            }
-            adjustment.setChanges = setChanges;
-            adjustment.thisWeekOnly = adjustment.appliedToFuture.length === 0;
+        const weekOnly = adjust.wantsThisWeekOnly(feedback);
+        const adjustment = { renamed, setChanges, appliedToFuture: [], thisWeekOnly: true };
+        if (cycle && cycle.program && !weekOnly) {
+            const { program: nextProgram, changes } = adjust.applyPlanToProgram(cycle.program, basePlan, updatedPlan);
+            if (changes.length) await repo.setCycleProgram(cycle.id, nextProgram);
+            adjustment.appliedToFuture = changes;
+            adjustment.thisWeekOnly = false;
         }
         updatedPlan.adjustment = adjustment;
 

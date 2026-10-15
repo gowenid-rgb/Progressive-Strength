@@ -94,10 +94,22 @@ const ex = (name, sets, reps) => ({ name, sets, reps: reps || '5' });
     check('"all future workouts" counts as lasting', adjust.wantsFuture('drop deadlift to 4 sets in all future workouts'), true);
     check('"from now on" counts', adjust.wantsFuture('from now on do 4 sets'), true);
     check('a one-off request does not', adjust.wantsFuture('my back is tight today, fewer sets'), false);
+    check('"this week only" opts out of lasting changes', adjust.wantsThisWeekOnly('fewer sets, this week only'), true);
+    check('an ordinary request does not opt out', adjust.wantsThisWeekOnly('drop deadlift to 4 sets'), false);
     const applied = adjust.applySetChangesToProgram(PROGRAM, [{ dayIndex: 0, name: 'Barbell Deadlift', from: 5, to: 4 }, { dayIndex: 0, name: '90/90 Hip Flow', from: 1, to: 3 }]);
     check('the programme takes the new count', applied.program.days[0].exercises[1].baseSets, 4);
     check('a warm-up never leaves one set', applied.program.days[0].exercises[0].baseSets, 1);
     check('the original programme object is untouched', PROGRAM.days[0].exercises[1].baseSets, 5);
+
+    // A plan the app has not saved yet can be older than the programme. Only what this
+    // adjustment changed is written, so an echo of the stale value cannot undo an earlier change.
+    const stalePlan = plan([{ dayName: 'Pull', exercises: [ex('90/90 Hip Flow', 1, '8'), ex('Barbell Deadlift', 5), ex('Barbell Row', 3, '8-10')] }]);
+    const echoed = plan([{ dayName: 'Pull', exercises: [ex('90/90 Hip Flow', 1, '8'), ex('Barbell Deadlift', 5), ex('Barbell Row', 2, '8-10')] }]);
+    const programAt4 = JSON.parse(JSON.stringify(PROGRAM));
+    programAt4.days[0].exercises[1].baseSets = 4;
+    const staleResult = adjust.applyPlanToProgram(programAt4, stalePlan, echoed);
+    check('an echoed stale value does not undo an earlier change', staleResult.program.days[0].exercises[1].baseSets, 4);
+    check('while the real change still lands', staleResult.program.days[0].exercises[2].baseSets, 2);
 
     console.log('\n=== end to end: adjusting never touches logged data ===\n');
     const ai = require(path.join(ROOT, 'aiClient.js'));
@@ -164,7 +176,7 @@ const ex = (name, sets, reps) => ({ name, sets, reps: reps || '5' });
     ]);
     const open = (await req('GET', '/api/user/data', undefined, token)).body.currentPlan;
     const adj2 = await req('POST', '/api/recalibrate-plan', { currentPlan: open, feedback: 'bench press should be 5 sets from now on' }, token);
-    check('lasting change is applied to the programme', adj2.body.adjustment.appliedToFuture.map(c => [c.name, c.to]), [['Barbell Bench Press', 5]]);
+    check('lasting change is applied to the programme', adj2.body.adjustment.appliedToFuture.map(c => [c.kind, c.name, c.to]), [['sets', 'Barbell Bench Press', 5]]);
     check('and the open day shows it now', adj2.body.days[1].exercises[0].sets, 5);
 
     const adv = await req('POST', '/api/cycle/advance', {}, token);
@@ -179,10 +191,26 @@ const ex = (name, sets, reps) => ({ name, sets, reps: reps || '5' });
         { dayName: 'Push', exercises: [ex('Barbell Bench Press', 5, '6-8')] }
     ]);
     const wk2 = (await req('GET', '/api/user/data', undefined, token)).body.currentPlan;
-    const adj3 = await req('POST', '/api/recalibrate-plan', { currentPlan: wk2, feedback: 'short on time today, fewer sets of rows' }, token);
-    check('a one-off change is flagged as this week only', adj3.body.adjustment.thisWeekOnly, true);
+    const adj3 = await req('POST', '/api/recalibrate-plan', { currentPlan: wk2, feedback: 'short on time, fewer sets of rows, this week only' }, token);
+    check('an explicit one-off change is flagged as this week only', adj3.body.adjustment.thisWeekOnly, true);
     const adv2 = await req('POST', '/api/cycle/advance', {}, token);
     check('week 3 is not affected by a one-off change', adv2.body.plan.days[0].exercises.find(e => e.name === 'Barbell Row').sets, 3);
+
+    console.log('\n=== adjusting is the default for the whole programme ===\n');
+    // No wording about the future at all: a swap through Adjust still carries forward.
+    nextAnswer = plan([
+        { dayName: 'Pull', exercises: [ex('90/90 Hip Flow', 1, '8'), ex('Barbell Deadlift', 5), ex('Seated Cable Row', 3, '8-10')] },
+        { dayName: 'Push', exercises: [ex('Barbell Bench Press', 5, '6-8')] }
+    ]);
+    const wk3 = (await req('GET', '/api/user/data', undefined, token)).body.currentPlan;
+    const adj4 = await req('POST', '/api/recalibrate-plan', { currentPlan: wk3, feedback: 'my gym has no barbell row, use a cable row instead' }, token);
+    check('a swap is applied to the programme by default', adj4.body.adjustment.appliedToFuture.map(c => [c.kind, c.from, c.to]), [['replaced', 'Barbell Row', 'Seated Cable Row']]);
+    const adv3 = await req('POST', '/api/cycle/advance', {}, token);
+    check('the swap is in the next week too', adv3.body.plan.days[0].exercises.map(e => e.name).includes('Seated Cable Row'), true);
+    check('and the old lift is gone from it', adv3.body.plan.days[0].exercises.map(e => e.name).includes('Barbell Row'), false);
+    const after3 = await snapshot();
+    check('the logged data is still identical', [after3.workouts, after3.sets], [before.workouts, before.sets]);
+    check('the old lift is still in the logged history', (await db.query("SELECT COUNT(*) AS n FROM workout_sets WHERE exercise_name = 'Barbell Deadlift'")).rows[0].n > 0, true);
 
     report();
 })().catch(e => { console.error('HARNESS ERROR:', e); process.exit(1); });

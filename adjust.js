@@ -188,7 +188,103 @@ function applySetChangesToProgram(prog, changes) {
     return { program: next, applied };
 }
 
+// "Adjust program" is the lifter consulting their coach about the whole programme, so a change
+// lasts by default. The way out is to say it is only for now.
+
+function wantsThisWeekOnly(feedback) {
+    return /\b(this week only|just this week|only this week|just for today|only for today|only today|just today|one[- ]off|for now)\b/i.test(String(feedback || ''));
+}
+
+/**
+ * Carries an adjusted week into the programme every later week is rendered from: set counts,
+ * rep ranges, swapped, added and removed movements, on days not yet completed. Only what the
+ * adjustment actually changed (new plan vs the plan it started from) is written, so a stale
+ * plan can never undo an earlier change. Completed days and logged history are never touched.
+ * Returns { program, changes }.
+ *
+ * changes: [{ kind: 'sets'|'reps'|'replaced'|'added'|'removed', dayIndex, name, from, to }]
+ */
+function applyPlanToProgram(prog, oldPlan, newPlan) {
+    const next = JSON.parse(JSON.stringify(prog));
+    const changes = [];
+    const oldDays = oldPlan && Array.isArray(oldPlan.days) ? oldPlan.days : [];
+    const newDays = newPlan && Array.isArray(newPlan.days) ? newPlan.days : [];
+    const keyOf = e => canonicalName(e && e.name);
+
+    newDays.forEach((nd, i) => {
+        if (!nd || nd.completed) return;
+        const od = oldDays[i];
+        if (od && od.completed) return;
+
+        if (!next.days[i]) next.days[i] = { dayName: nd.dayName, exercises: [] };
+        const pd = next.days[i];
+        if (!Array.isArray(pd.exercises)) pd.exercises = [];
+
+        const oldList = od && Array.isArray(od.exercises) ? od.exercises : [];
+        const newList = Array.isArray(nd.exercises) ? nd.exercises : [];
+        const oldByKey = new Map(oldList.map(e => [keyOf(e), e]));
+        const newKeys = new Set(newList.map(keyOf));
+        const progIndex = name => pd.exercises.findIndex(e => keyOf(e) === canonicalName(name));
+
+        // Same movement on both sides: carry over a changed set count or rep range.
+        newList.forEach(e => {
+            const was = oldByKey.get(keyOf(e));
+            const at = progIndex(e.name);
+            if (!was || at < 0) return;
+            const target = pd.exercises[at];
+            const isWarmup = normaliseRole(target.role) === 'warmup';
+            const sets = Math.max(1, Math.floor(Number(e.sets)) || 1);
+            if (!isWarmup && Number.isFinite(Number(was.sets)) && sets !== Number(was.sets) && sets !== Number(target.baseSets)) {
+                changes.push({ kind: 'sets', dayIndex: i, name: target.name, from: Number(target.baseSets) || null, to: sets });
+                target.baseSets = sets;
+            }
+            const reps = e.reps ? String(e.reps) : null;
+            if (reps && String(was.reps || '') !== reps && reps !== String(target.repRange || '')) {
+                changes.push({ kind: 'reps', dayIndex: i, name: target.name, from: target.repRange || null, to: reps });
+                target.repRange = reps;
+            }
+        });
+
+        // Movements that left and movements that arrived are paired in order: a lift that
+        // disappears while another appears on the same day is a swap.
+        const leaving = oldList.filter(e => !newKeys.has(keyOf(e)));
+        const arriving = newList.filter(e => !oldByKey.has(keyOf(e)));
+        const consumed = new Set();
+        arriving.forEach((e, n) => {
+            const out = leaving[n];
+            const at = out ? progIndex(out.name) : -1;
+            const role = at >= 0 ? normaliseRole(pd.exercises[at].role) : normaliseRole(e.name);
+            const entry = {
+                name: e.name, role, repRange: e.reps ? String(e.reps) : '8-10',
+                baseSets: role === 'warmup' ? 1 : Math.max(1, Math.floor(Number(e.sets)) || 3)
+            };
+            if (at >= 0) {
+                pd.exercises[at] = entry;
+                consumed.add(n);
+                changes.push({ kind: 'replaced', dayIndex: i, name: e.name, from: out.name, to: e.name });
+            } else {
+                pd.exercises.splice(Math.min(newList.indexOf(e), pd.exercises.length), 0, entry);
+                changes.push({ kind: 'added', dayIndex: i, name: e.name, from: null, to: e.name });
+            }
+        });
+        leaving.slice(arriving.length).concat(leaving.filter((e, n) => n < arriving.length && progIndex(e.name) >= 0)).forEach(e => {
+            const at = progIndex(e.name);
+            if (at < 0) return;
+            pd.exercises.splice(at, 1);
+            changes.push({ kind: 'removed', dayIndex: i, name: e.name, from: e.name, to: null });
+        });
+    });
+
+    // Open days the model dropped are dropped from the programme too.
+    if (newDays.length < next.days.length) {
+        const keep = Math.max(newDays.length, ...oldDays.map((d, i) => (d && d.completed ? i + 1 : 0)));
+        next.days = next.days.slice(0, keep);
+    }
+    return { program: next, changes };
+}
+
 module.exports = {
+    applyPlanToProgram, wantsThisWeekOnly,
     snapNames, anchorFor, restoreCompletedDays, lockWarmups, diffSets,
     wantsFuture, applySetChangesToProgram
 };

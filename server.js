@@ -15,6 +15,7 @@ const { computeMetrics, canonicalName } = require('./metrics');
 const { computeCycleSnapshot } = require('./cycleSnapshot');
 const { buildReviewFacts, buildReviewPrompt, validateReview, normaliseReview, REVIEW_SCHEMA } = require('./weeklyReview');
 const program = require('./program');
+const adjust = require('./adjust');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
 const { aiLimiters, authLimiter } = require('./rateLimits');
@@ -727,7 +728,9 @@ Adjust the current plan according to the feedback while maintaining the exact sa
 Smart Programming Rules:
 1. Warmups and mobility work should NOT have a suggested weight, and should have appropriate reps.
 2. For main working sets, if the user has past performance history for a movement, suggest a challenging but realistic weight based on their history. If it's a new movement, omit suggestedWeight entirely.
-3. Incorporate the feedback heavily to modify exercises, intensities, or phase.
+3. Incorporate the feedback to modify exercises, intensities, or phase, but change ONLY what the feedback asks for. Every other movement keeps its exact name, set count and rep range.
+4. Movement names are exact identifiers. Any movement you keep must be written character for character as it appears in the current plan ("Barbell Deadlift" must not become "Deadlift"). Days marked "completed": true must be returned unchanged.
+5. Warm-ups are always exactly 1 set.
 
 IMPORTANT: You MUST return the plan STRICTLY as a raw JSON object. Do not include markdown formatting, do not include \`\`\`json blocks. Just the raw JSON object.
 Schema requirement:
@@ -756,6 +759,37 @@ Schema requirement:
             validate: validatePlan,
             label: 'recalibrate-plan'
         });
+
+        // The model's answer is a proposal. Everything below only touches the PLAN (and, for a
+        // "from now on" set change, the cycle's programme). Logged sessions are never read from
+        // or written by this route.
+        const cycle = await repo.getActiveCycle(req.user.id);
+        const saved = cycle ? await repo.getWeekPlan(cycle.id, cycle.current_week) : null;
+        const basePlan = (saved && saved.plan) || currentPlan;
+
+        adjust.restoreCompletedDays(updatedPlan, basePlan);
+        const logged = await repo.getKnownExerciseNames(req.user.id);
+        const { renamed } = adjust.snapNames(updatedPlan, planExerciseNames(basePlan).concat(logged || []), feedback);
+        adjust.lockWarmups(updatedPlan, cycle && cycle.program);
+
+        // The week belongs to the cycle, not the model.
+        ['week', 'totalWeeks', 'phase'].forEach(k => {
+            if (basePlan && basePlan[k] !== undefined) updatedPlan[k] = basePlan[k];
+        });
+
+        // Adjust program is the lifter consulting their coach about the whole programme, so by
+        // default the change carries into every later week (the programme is what those weeks
+        // are rendered from). Saying it is only for now keeps it to this week.
+        const setChanges = adjust.diffSets(basePlan, updatedPlan);
+        const weekOnly = adjust.wantsThisWeekOnly(feedback);
+        const adjustment = { renamed, setChanges, appliedToFuture: [], thisWeekOnly: true };
+        if (cycle && cycle.program && !weekOnly) {
+            const { program: nextProgram, changes } = adjust.applyPlanToProgram(cycle.program, basePlan, updatedPlan);
+            if (changes.length) await repo.setCycleProgram(cycle.id, nextProgram);
+            adjustment.appliedToFuture = changes;
+            adjustment.thisWeekOnly = false;
+        }
+        updatedPlan.adjustment = adjustment;
 
         res.json(updatedPlan);
 

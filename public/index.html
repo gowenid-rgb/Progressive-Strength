@@ -1986,6 +1986,9 @@
                 }
 
                 const plan = await response.json();
+                // Sent alongside the plan so the lifter is told what stuck; never stored with it.
+                const adjustment = plan.adjustment || {};
+                delete plan.adjustment;
 
                 if (currentWorkoutPlan && currentWorkoutPlan.days) {
                     plan.days.forEach((newDay, idx) => {
@@ -2002,6 +2005,17 @@
                 renderPlan(plan);
                 document.getElementById('input-adjust').value = ''; // Clear input
                 nav('screen-plan', 'nav-plan');
+                const lasting = adjustment.appliedToFuture || [];
+                if (lasting.length) {
+                    const words = c => c.kind === 'sets' ? c.name + ' ' + c.from + ' → ' + c.to + ' sets'
+                        : c.kind === 'reps' ? c.name + ' reps ' + c.from + ' → ' + c.to
+                        : c.kind === 'replaced' ? c.from + ' → ' + c.to
+                        : c.kind === 'added' ? 'added ' + c.name : 'removed ' + c.name;
+                    alert('Done. Applied to this week and all future weeks: ' + lasting.map(words).join('; ')
+                        + '. Your logged workouts are unchanged.');
+                } else if (adjustment.thisWeekOnly) {
+                    alert('Changed for this week only. Your logged workouts are unchanged.');
+                }
             } catch (err) {
                 console.error(err);
                 alert("Network error.");

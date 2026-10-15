@@ -146,7 +146,12 @@ function prescribeWeight(exercise, program, history, weekSpec) {
         return { suggestedWeight: topWeight + ' lbs', reason: 'Matching last session.' };
     }
 
-    const allHitTop = atTop.every(s => s.reps >= range.max);
+    // The rule: add weight only when EVERY prescribed set reached the top of the rep range at
+    // this load. Fewer sets logged than prescribed means the goal was not met, however good
+    // the sets that were logged looked.
+    const targetSets = setsFor(exercise);
+    const needed = targetSets || atTop.length;
+    const allHitTop = atTop.length >= needed && atTop.every(s => s.reps >= range.max);
     if (allHitTop) {
         const inc = incrementFor(exercise.name, program);
         return {
@@ -155,11 +160,22 @@ function prescribeWeight(exercise, program, history, weekSpec) {
         };
     }
 
-    const best = Math.max(...atTop.map(s => s.reps));
+    // Say exactly what happened set by set. A single "best" number read as "10 of 10" next to
+    // a Hold, which looked like a contradiction.
+    const done = atTop.map(s => s.reps).join(', ');
+    const goal = targetSets ? targetSets + ' × ' + range.max : range.max + ' on every set';
     return {
         suggestedWeight: topWeight + ' lbs',
-        reason: 'Hold ' + topWeight + ' lb — got ' + best + ' of ' + range.max + ' reps. Add weight once all sets reach ' + range.max + '.'
+        reason: 'Hold ' + topWeight + ' lb — last time: ' + done + ' reps (goal ' + goal + '). Add weight once all '
+            + (targetSets ? targetSets + ' sets' : 'sets') + ' reach ' + range.max + '.'
     };
+}
+
+/** Prescribed sets for a movement, constant across the cycle. Warm-ups are always a single set. */
+function setsFor(ex) {
+    if (normaliseRole(ex.role) === 'warmup') return 1;
+    const n = Math.floor(Number(ex.baseSets));
+    return n >= 1 ? n : 3;
 }
 
 /* ----------------------------------------------------------------- rendering */
@@ -191,9 +207,9 @@ function renderWeek(program, weekNumber, history) {
             dayName: day.dayName,
             workoutIntro: spec.intent || day.focus || '',
             exercises: (Array.isArray(day.exercises) ? day.exercises : []).map(ex => {
-                const baseSets = Number(ex.baseSets) || 3;
-                const adjust = Number(spec.setAdjustment) || 0;
-                const sets = Math.max(1, baseSets + adjust);
+                // Set counts are fixed for the whole cycle (warm-ups are always one set).
+                // setAdjustment is still accepted in stored programmes but no longer used.
+                const sets = setsFor(ex);
                 const { suggestedWeight, reason } = prescribeWeight(ex, program, history, spec);
 
                 const out = {
@@ -203,7 +219,8 @@ function renderWeek(program, weekNumber, history) {
                 };
                 // Warmups and mobility carry no load, and a suggested weight on them is noise.
                 if (normaliseRole(ex.role) !== 'warmup' && suggestedWeight) out.suggestedWeight = suggestedWeight;
-                if (reason) out.progressionNote = reason;
+                // A warm-up has no load to progress, so a progression note on it is noise.
+                if (reason && normaliseRole(ex.role) !== 'warmup') out.progressionNote = reason;
                 return out;
             })
         }))

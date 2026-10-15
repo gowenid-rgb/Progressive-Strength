@@ -110,7 +110,29 @@ function session(name, sets) {
         [session('Barbell Bench Press', [[185, 8], [185, 8], [185, 6]])],
         { phase: 'build' });
     check('one short set holds the weight', r.suggestedWeight, '185 lbs');
-    check('and explains the gap', /got 8 of 8 reps|Add weight once all sets reach 8/.test(r.reason), true);
+    check('and explains the gap', /last time: 8, 8, 6 reps \(goal 3 × 8\)|Add weight once all 3 sets reach 8/.test(r.reason), true);
+
+    // The reported contradiction: one set hit the top of the range, the rest did not. The
+    // advice must hold, and must show every set rather than a lone "10 of 10".
+    r = prog.prescribeWeight(
+        { name: 'Barbell Bench Press', repRange: '8-10', baseSets: 4 }, PROGRAM,
+        [session('Barbell Bench Press', [[145, 10], [145, 8], [145, 7], [145, 6]])],
+        { phase: 'build' });
+    check('one set at the max still holds', r.suggestedWeight, '145 lbs');
+    check('and lists every set', /10, 8, 7, 6/.test(r.reason), true);
+
+    // Hitting the max on fewer sets than prescribed is not hitting all N sets.
+    r = prog.prescribeWeight(
+        { name: 'Barbell Bench Press', repRange: '8-10', baseSets: 4 }, PROGRAM,
+        [session('Barbell Bench Press', [[145, 10], [145, 10]])],
+        { phase: 'build' });
+    check('fewer sets logged than prescribed holds', r.suggestedWeight, '145 lbs');
+
+    r = prog.prescribeWeight(
+        { name: 'Barbell Bench Press', repRange: '8-10', baseSets: 4 }, PROGRAM,
+        [session('Barbell Bench Press', [[145, 10], [145, 10], [145, 10], [145, 10]])],
+        { phase: 'build' });
+    check('all N sets at the max pushes up', r.suggestedWeight, '150 lbs');
 
     // Lower body moves in bigger jumps than upper.
     r = prog.prescribeWeight(
@@ -149,7 +171,11 @@ function session(name, sets) {
     check('the week intent becomes the intro', week.days[0].workoutIntro, 'Push the top of the range.');
     check('movements come from the programme', week.days[0].exercises.map(e => e.name),
         ['Barbell Bench Press', 'Back Squat', 'Cable Fly']);
-    check('setAdjustment is applied', week.days[0].exercises[0].sets, 4);
+    check('set counts stay fixed whatever setAdjustment says', week.days[0].exercises[0].sets, 3);
+    check('set counts are the same in every week',
+        [1, 2, 3, 4, 5, 6].map(n => prog.renderWeek(PROGRAM, n, history).days[0].exercises[0].sets), [3, 3, 3, 3, 3, 3]);
+    check('a warm-up is always one set',
+        prog.renderWeek({ totalWeeks: 6, days: [{ dayName: 'A', exercises: [{ name: 'Cat-Cow', role: 'warmup', repRange: '10', baseSets: 3 }] }] }, 2, []).days[0].exercises[0].sets, 1);
     check('progression is applied to the prescription', week.days[0].exercises[0].suggestedWeight, '190 lbs');
     check('the reason travels with it', /Up 5 lb/.test(week.days[0].exercises[0].progressionNote), true);
 
@@ -159,11 +185,11 @@ function session(name, sets) {
     const w6 = prog.renderWeek(PROGRAM, 6, history);
     check('movements are identical in week 1 and week 6',
         JSON.stringify(w1.days[0].exercises.map(e => e.name)) === JSON.stringify(w6.days[0].exercises.map(e => e.name)), true);
-    check('the deload drops a set', w6.days[0].exercises[0].sets, 2);
+    check('the deload keeps the set count', w6.days[0].exercises[0].sets, 3);
     check('the deload drops the load', w6.days[0].exercises[0].suggestedWeight, '155 lbs');
-    check('sets never fall below one', prog.renderWeek(
+    check('a negative setAdjustment is ignored', prog.renderWeek(
         Object.assign({}, PROGRAM, { weeks: [{ week: 1, phase: 'base', intent: 'x', setAdjustment: -9 }] }),
-        1, history).days[0].exercises[0].sets, 1);
+        1, history).days[0].exercises[0].sets, 3);
 
     // A week the programme forgot to describe must still render.
     week = prog.renderWeek(Object.assign({}, PROGRAM, { weeks: [] }), 4, history);

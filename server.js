@@ -1,6 +1,8 @@
 // Loads .env and hard-fails on missing required vars. Must come first: every module
 // below assumes process.env is already populated.
 require('./config');
+// Local test mode only (LOCAL_DB=1): must run before db.js loads `pg`.
+if (process.env.LOCAL_DB === '1') require('./dev/localDb').install();
 const express = require('express');
 const path = require('path');
 const {
@@ -426,18 +428,22 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
             'RULES:',
             '1. Choose the movements ONCE. The same movements run for the whole cycle, on the same',
             '   days. Progression comes from load and reps, not from swapping exercises weekly.',
+            '1b. Name each day for its content only (for example "Full Body A"). Do not start',
+            '   the name with "Day 1 -" or any day number; the app numbers the days itself.',
             '2. Name each movement exactly once and use that spelling everywhere. A renamed',
             '   movement becomes a different exercise with no history.',
             '3. Give a concrete progression rule the lifter can follow without you: when to add',
             '   weight, and how much for upper vs lower body.',
-            '4. Provide an entry in "weeks" for EVERY week from 1 to ' + totalWeeks + '. Use',
-            '   setAdjustment to shape volume across the cycle (negative for a deload).',
-            '5. The deload week must genuinely reduce work, not just say so.',
+            '4. Provide an entry in "weeks" for EVERY week from 1 to ' + totalWeeks + '. Always',
+            '   set setAdjustment to 0: the number of sets per movement is FIXED for the whole',
+            '   cycle (baseSets). Never add or remove sets between weeks.',
+            '5. The deload week reduces load (the app takes about 15% off), not sets.',
             '6. In "rationale", explain in two or three sentences why this programme, referring to',
             '   the previous cycle and journal where relevant. The lifter reads this.',
             '7. Give every movement a "role": warmup (mobility, activation, anything done to prepare',
             '   rather than to progress), main (the primary compound lifts), accessory, core, or',
-            '   conditioning (cardio, intervals, sled work). Warm-ups are not progressed week to week.'
+            '   conditioning (cardio, intervals, sled work). Warm-ups are not progressed week to week',
+            '   and are always exactly ONE set (baseSets: 1).'
         ].join('\n');
 
         const designed = await generateJSON({

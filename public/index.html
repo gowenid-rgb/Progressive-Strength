@@ -173,7 +173,7 @@
     <div class="fixed bottom-[-10%] right-[-10%] w-[400px] h-[400px] bg-white/5 rounded-full blur-[100px] pointer-events-none"></div>
 
     <!-- Mobile Device Frame -->
-    <div class="w-full max-w-md h-full sm:h-[850px] bg-background sm:rounded-[44px] sm:border sm:border-borderSubtle overflow-hidden flex flex-col relative smooth-shadow z-10">
+    <div class="w-full max-w-md h-full sm:h-[850px] sm:max-h-full bg-background sm:rounded-[44px] sm:border sm:border-borderSubtle overflow-hidden flex flex-col relative smooth-shadow z-10">
 
 
 
@@ -725,6 +725,13 @@
         // Draws one node per week of the cycle, with its phase label. Falls back to the
         // plan's own totalWeeks when there is no cycle yet (a plan generated before the cycle
         // was saved), so the timeline is never blank.
+        // The card already carries a "Day N" badge, so a name the AI began with "Day 1 - " would
+        // read twice. Strip that prefix for display only; the stored name is untouched.
+        function plainDayName(name) {
+            const n = String(name || '').replace(/^\s*day\s*\d+\s*[-–—:.]\s*/i, '').trim();
+            return n || 'Workout';
+        }
+
         function renderTimeline(currentWeek) {
             const track = document.getElementById('cycle-track');
             const labels = document.getElementById('cycle-labels');
@@ -753,7 +760,7 @@
                 const size = phases.length > 10 ? 'w-6 h-6 text-[8px]' : 'w-8 h-8 text-[10px]';
                 let cls;
                 if (w < currentWeek) {
-                    cls = `z-10 bg-white ${size} rounded-full border border-borderSubtle flex items-center justify-center font-bold text-black`;
+                    cls = `z-10 bg-white antialiased ${size} rounded-full border border-borderSubtle flex items-center justify-center font-bold text-black`;
                 } else if (w === currentWeek) {
                     cls = `z-10 bg-surfaceElevated ${size} rounded-full border border-white flex items-center justify-center font-bold text-white shadow-[0_0_15px_rgba(255,255,255,0.3)]`;
                 } else {
@@ -848,7 +855,7 @@
                         <div class="bg-surface p-4 rounded-3xl border border-borderSubtle opacity-50 flex justify-between items-center">
                             <div>
                                 <span class="text-[10px] font-bold text-textMuted uppercase tracking-widest">Day ${index + 1}</span>
-                                <h3 class="font-semibold text-white tracking-tight">${day.dayName || 'Workout'}</h3>
+                                <h3 class="font-semibold text-white tracking-tight">${plainDayName(day.dayName)}</h3>
                             </div>
                             <span class="text-xs bg-white text-black px-2 py-1 rounded-full font-bold">✓ Done</span>
                         </div>`;
@@ -873,7 +880,7 @@
                         <div class="flex justify-between items-center mb-6">
                             <div>
                                 <span class="text-[10px] font-bold text-white bg-surfaceElevated px-2.5 py-1 rounded-full uppercase tracking-widest border border-borderSubtle">Day ${index + 1}</span>
-                                <h3 class="font-semibold text-lg mt-3 text-white tracking-tight">${day.dayName || 'Workout'}</h3>
+                                <h3 class="font-semibold text-lg mt-3 text-white tracking-tight">${plainDayName(day.dayName)}</h3>
                             </div>
                             <button onclick="startWorkout(${index})" class="bg-white text-black text-sm font-semibold px-5 py-2 rounded-full hover:bg-gray-200 transition-colors">Start</button>
                         </div>
@@ -1102,7 +1109,7 @@
         // The cycle strength panel: one number, the trajectory, and where the gain came from.
         function msPanel(c) {
             const N = c.totalWeeks, L = c.loggedThrough, sum = c.summary, prev = c.previous;
-            const head = `<div class="ms-eyebrow"><span>Cycle strength</span><span>Week ${L} of ${N}</span></div>`;
+            const head = `<div class="ms-eyebrow"><span>Cycle strength</span><span>Logged: Week ${L} of ${N}</span></div>`;
 
             if (sum.strengthPct === null) {
                 return `<div class="ms-card">${head}
@@ -1343,22 +1350,22 @@
                     const numSets = parseInt(ex.sets) || 3;
                     const defaultWeight = ex.suggestedWeight || 'BW';
 
-                    // Lookup previous performance for this exercise
-                    let prevPerf = '-';
+                    // Previous session for this exercise, set by set, so each row shows exactly what
+                    // was done on that set last time (e.g. 145x10, 145x8, 145x7, 145x6).
+                    let prevSets = [];
                     for (let i = history.length - 1; i >= 0; i--) {
                         if (history[i].exercises) {
                             const pastEx = history[i].exercises.find(e => e && e.name.toLowerCase() === ex.name.toLowerCase());
-                            if (pastEx && pastEx.sets && pastEx.sets.length > 0) {
-                                const lastSet = pastEx.sets[pastEx.sets.length - 1];
-                                if (lastSet && lastSet.weight && lastSet.reps) {
-                                    prevPerf = `${lastSet.weight}x${lastSet.reps}`;
-                                    break;
-                                }
+                            if (pastEx && Array.isArray(pastEx.sets)) {
+                                const logged = pastEx.sets.filter(st => st && st.weight && st.reps);
+                                if (logged.length > 0) { prevSets = logged; break; }
                             }
                         }
                     }
 
                     for (let s = 1; s <= numSets; s++) {
+                        const prevSet = prevSets[s - 1];
+                        const prevPerf = prevSet ? `${prevSet.weight}x${prevSet.reps}` : '-';
                         setsHtml += `
                         <div data-done="false" class="grid grid-cols-12 gap-2 mb-3 items-center text-center bg-surfaceElevated p-2 rounded-xl border border-borderSubtle set-row">
                             <div class="col-span-1 text-xs text-white font-medium">${s}</div>
@@ -1376,7 +1383,7 @@
                         <div class="p-5 flex justify-between items-start gap-3">
                             <div class="min-w-0">
                                 <h3 class="font-semibold text-lg text-white tracking-tight" data-ex-name="${exIndex}">${ex.name}</h3>
-                                <p class="text-[11px] text-textMuted uppercase tracking-widest mt-1 font-semibold">Goal: ${ex.sets} × ${ex.reps} reps</p>
+                                <p class="text-[11px] text-textMuted uppercase tracking-widest mt-1 font-semibold">Goal: ${ex.sets} × ${/[a-z]/i.test(String(ex.reps)) ? ex.reps : ex.reps + ' reps'}</p>
                                 <p class="hidden text-[10px] text-amber-400 uppercase tracking-widest mt-1 font-semibold" data-ex-swapped="${exIndex}"></p>
                                 ${ex.progressionNote ? '<p class="text-[11px] text-textMuted mt-1.5 leading-relaxed">' + escapeHtml(ex.progressionNote) + '</p>' : ''}
                             </div>

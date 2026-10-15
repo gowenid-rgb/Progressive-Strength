@@ -428,6 +428,8 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
             'RULES:',
             '1. Choose the movements ONCE. The same movements run for the whole cycle, on the same',
             '   days. Progression comes from load and reps, not from swapping exercises weekly.',
+            '1b. Name each day for its content only (for example "Full Body A"). Do not start',
+            '   the name with "Day 1 -" or any day number; the app numbers the days itself.',
             '2. Name each movement exactly once and use that spelling everywhere. A renamed',
             '   movement becomes a different exercise with no history.',
             '3. Give a concrete progression rule the lifter can follow without you: when to add',

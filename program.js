@@ -219,7 +219,8 @@ function renderWeek(program, weekNumber, history) {
                 };
                 // Warmups and mobility carry no load, and a suggested weight on them is noise.
                 if (normaliseRole(ex.role) !== 'warmup' && suggestedWeight) out.suggestedWeight = suggestedWeight;
-                if (reason) out.progressionNote = reason;
+                // A warm-up has no load to progress, so a progression note on it is noise.
+                if (reason && normaliseRole(ex.role) !== 'warmup') out.progressionNote = reason;
                 return out;
             })
         }))

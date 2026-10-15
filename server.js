@@ -432,14 +432,16 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
             '   movement becomes a different exercise with no history.',
             '3. Give a concrete progression rule the lifter can follow without you: when to add',
             '   weight, and how much for upper vs lower body.',
-            '4. Provide an entry in "weeks" for EVERY week from 1 to ' + totalWeeks + '. Use',
-            '   setAdjustment to shape volume across the cycle (negative for a deload).',
-            '5. The deload week must genuinely reduce work, not just say so.',
+            '4. Provide an entry in "weeks" for EVERY week from 1 to ' + totalWeeks + '. Always',
+            '   set setAdjustment to 0: the number of sets per movement is FIXED for the whole',
+            '   cycle (baseSets). Never add or remove sets between weeks.',
+            '5. The deload week reduces load (the app takes about 15% off), not sets.',
             '6. In "rationale", explain in two or three sentences why this programme, referring to',
             '   the previous cycle and journal where relevant. The lifter reads this.',
             '7. Give every movement a "role": warmup (mobility, activation, anything done to prepare',
             '   rather than to progress), main (the primary compound lifts), accessory, core, or',
-            '   conditioning (cardio, intervals, sled work). Warm-ups are not progressed week to week.'
+            '   conditioning (cardio, intervals, sled work). Warm-ups are not progressed week to week',
+            '   and are always exactly ONE set (baseSets: 1).'
         ].join('\n');
 
         const designed = await generateJSON({

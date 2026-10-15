@@ -1343,22 +1343,22 @@
                     const numSets = parseInt(ex.sets) || 3;
                     const defaultWeight = ex.suggestedWeight || 'BW';
 
-                    // Lookup previous performance for this exercise
-                    let prevPerf = '-';
+                    // Previous session for this exercise, set by set, so each row shows exactly what
+                    // was done on that set last time (e.g. 145x10, 145x8, 145x7, 145x6).
+                    let prevSets = [];
                     for (let i = history.length - 1; i >= 0; i--) {
                         if (history[i].exercises) {
                             const pastEx = history[i].exercises.find(e => e && e.name.toLowerCase() === ex.name.toLowerCase());
-                            if (pastEx && pastEx.sets && pastEx.sets.length > 0) {
-                                const lastSet = pastEx.sets[pastEx.sets.length - 1];
-                                if (lastSet && lastSet.weight && lastSet.reps) {
-                                    prevPerf = `${lastSet.weight}x${lastSet.reps}`;
-                                    break;
-                                }
+                            if (pastEx && Array.isArray(pastEx.sets)) {
+                                const logged = pastEx.sets.filter(st => st && st.weight && st.reps);
+                                if (logged.length > 0) { prevSets = logged; break; }
                             }
                         }
                     }
 
                     for (let s = 1; s <= numSets; s++) {
+                        const prevSet = prevSets[s - 1];
+                        const prevPerf = prevSet ? `${prevSet.weight}x${prevSet.reps}` : '-';
                         setsHtml += `
                         <div data-done="false" class="grid grid-cols-12 gap-2 mb-3 items-center text-center bg-surfaceElevated p-2 rounded-xl border border-borderSubtle set-row">
                             <div class="col-span-1 text-xs text-white font-medium">${s}</div>

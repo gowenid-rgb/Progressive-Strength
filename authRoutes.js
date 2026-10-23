@@ -4,11 +4,15 @@ const jwt = require('jsonwebtoken');
 const db = require('./db');
 
 const { JWT_SECRET } = require('./config');
+const cfAccess = require('./cfAccess');
 
 const router = express.Router();
 
 // Register
 router.post('/register', async (req, res) => {
+    // Behind Cloudflare Access the only people who get in are the ones Access admits, and their
+    // accounts already exist. Open sign-up would just be a second way in.
+    if (cfAccess.enabled()) return res.status(403).json({ error: 'Sign-up is disabled on this server' });
     try {
         const { email, password } = req.body;
         if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -57,6 +61,32 @@ router.post('/login', async (req, res) => {
         res.json({ token, user: { id: user.id, email: user.email } });
     } catch (err) {
         console.error('Login error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// Sign in with a Cloudflare Access token instead of a password. Only ever signs in an account
+// that already exists; it never creates one.
+router.post('/cloudflare', async (req, res) => {
+    if (!cfAccess.enabled()) return res.status(404).json({ error: 'Not found' });
+    try {
+        const verified = await cfAccess.verifyToken(cfAccess.extractToken(req));
+        if (!verified) return res.status(401).json({ error: 'Cloudflare Access sign-in could not be verified' });
+
+        const found = await db.query('SELECT id, email FROM users WHERE lower(email) = lower($1)', [verified.email]);
+        if (found.rows.length !== 1) {
+            return res.status(403).json({
+                error: found.rows.length === 0
+                    ? 'No account exists for ' + verified.email + '. Accounts are not created through Cloudflare Access.'
+                    : 'More than one account matches ' + verified.email + '; sign in with your password instead.'
+            });
+        }
+
+        const user = found.rows[0];
+        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+        res.json({ token, user: { id: user.id, email: user.email } });
+    } catch (err) {
+        console.error('Cloudflare sign-in error:', err);
         res.status(500).json({ error: 'Internal server error' });
     }
 });

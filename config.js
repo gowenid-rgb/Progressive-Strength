@@ -40,5 +40,11 @@ module.exports = {
     // without a database, and the AI routes return a clear 500 when the key is absent.
     DATABASE_URL: process.env.DATABASE_URL,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-    PORT: process.env.PORT || 3000
+    PORT: process.env.PORT || 3000,
+
+    // Optional Cloudflare Access sign-in (see cfAccess.js). Both must be set to turn it on;
+    // with either missing the app behaves exactly as before. Getters, so they are read at the
+    // moment of use rather than frozen at startup.
+    get CF_ACCESS_TEAM_DOMAIN() { return process.env.CF_ACCESS_TEAM_DOMAIN; },
+    get CF_ACCESS_AUD() { return process.env.CF_ACCESS_AUD; }
 };

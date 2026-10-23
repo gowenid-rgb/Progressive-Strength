@@ -1696,3 +1696,35 @@ verification greps the file on disk rather than trusting the script's output.
 Client half now in and verified in a browser: the header reads "Week 3 of 6", the timeline shows
 the full arc with phases, and the programme card expands to show the rationale, the progression
 rule in plain language, and every week's intent with the current week highlighted.
+
+### 2026-10-22 — Optional sign-in through Cloudflare Access
+
+The app now also runs on the owner's laptop at `https://progress.gowen-ailab.com`, behind
+Cloudflare Access (only their Gmail gets through). A second password there is redundant, so
+there is an optional "Cloudflare Access sign-in" mode.
+
+- **Off unless configured.** Needs both `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` (documented
+  in `.env.example`, exposed by `config.js` as getters). With either unset nothing changes:
+  Railway, the tests and local test mode behave exactly as before.
+- **Verify, don't trust headers.** `cfAccess.js` verifies the `Cf-Access-Jwt-Assertion` header
+  (or the `CF_Authorization` cookie) with `jsonwebtoken`: RS256 only, audience =
+  `CF_ACCESS_AUD`, issuer = `https://<team domain>`, key chosen by `kid` from the team's
+  `/cdn-cgi/access/certs` (cached for an hour, refetched once on an unknown `kid`). The plain
+  `Cf-Access-Authenticated-User-Email` header is never used: anything that can reach the app
+  directly could forge it. No new dependencies (Node's built-in `fetch`).
+- **`POST /api/auth/cloudflare`.** Looks up the account whose email matches the token's email
+  case-insensitively (`lower(email) = lower($1)`; stored spelling can differ). Exactly one match
+  returns `{ token, user }` signed like `/login` (same secret, 7 days). Zero or several: 403.
+  It never creates accounts. 404 when the mode is off. Behind `authLimiter` like the others.
+- **Sign-up is off in this mode** (`/api/auth/register` returns 403). Password `/login` keeps
+  working as a fallback.
+- **Front end.** The boot handler tries Cloudflare sign-in when there is no saved token, or the
+  saved one is rejected (401/403), and otherwise shows the login screen as before. The
+  "after sign-in" steps are now one function, `completeSignIn`, shared with password login.
+  With the mode off the extra request is a harmless 404 (visible as one console error).
+- **Tests.** `test/cfaccess.test.js` signs real RS256 tokens with a generated key pair and a
+  stubbed certs fetch. It covers: valid and case-insensitive login, cookie fallback, header-only
+  email refused, wrong aud, wrong iss, expired, HS256, `alg: none`, wrong key, unknown kid, no
+  matching account (403, nothing created), mode off (404, sign-up works), mode on (sign-up 403),
+  key caching and rotation. `test/tier1.test.js` gained boot cases for the front-end path.
+- No migrations and no database changes.

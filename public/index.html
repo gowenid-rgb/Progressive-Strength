@@ -530,7 +530,10 @@
         document.addEventListener('DOMContentLoaded', async () => {
             const token = localStorage.getItem('token');
             if (!token) {
-                // No session, but stale data may still be sitting here from a previous user.
+                // No saved session. Behind Cloudflare Access the visitor may already be signed
+                // in there; otherwise fall through to the normal login screen.
+                if (await tryCloudflareSignIn()) return;
+                // Stale data may still be sitting here from a previous user.
                 clearLocalSession();
                 nav('screen-auth');
                 return;
@@ -538,6 +541,8 @@
             try {
                 const res = await fetch('/api/user/data', { headers: { 'Authorization': 'Bearer ' + token } });
                 if (!res.ok) {
+                    // A rejected token is the one case worth retrying through Cloudflare Access.
+                    if ((res.status === 401 || res.status === 403) && await tryCloudflareSignIn()) return;
                     clearLocalSession();
                     nav('screen-auth');
                     return;
@@ -578,6 +583,40 @@
             }
         });
 
+        // Everything that follows a successful sign-in, whichever way it happened.
+        async function completeSignIn(token) {
+            // Drop everything belonging to whoever used this browser last, before the new
+            // session can adopt it. Without this, user B could push user A's history.
+            clearLocalSession();
+            localStorage.setItem('token', token);
+
+            const userRes = await fetch('/api/user/data', { headers: { 'Authorization': 'Bearer ' + token } });
+            if (!userRes.ok) throw new Error('Signed in, but could not load your data. Please reload.');
+            hydrateFromServer(await userRes.json());
+
+            if (currentWorkoutPlan) {
+                renderPlan(currentWorkoutPlan);
+                nav('screen-plan', 'nav-plan');
+            } else {
+                nav('screen-onboarding');
+            }
+        }
+
+        // Signs in through Cloudflare Access when the server has that mode on and the browser
+        // holds a valid Access session. Any failure just means "show the login screen".
+        async function tryCloudflareSignIn() {
+            try {
+                const res = await fetch('/api/auth/cloudflare', { method: 'POST', credentials: 'same-origin' });
+                if (!res.ok) return false;
+                const data = await res.json();
+                if (!data || !data.token) return false;
+                await completeSignIn(data.token);
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
         async function handleAuth(type) {
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
@@ -591,21 +630,7 @@
                 const data = await res.json();
                 if(!res.ok) throw new Error(data.error || 'Failed');
 
-                // Drop everything belonging to whoever used this browser last, before the new
-                // session can adopt it. Without this, user B could push user A's history.
-                clearLocalSession();
-                localStorage.setItem('token', data.token);
-
-                const userRes = await fetch('/api/user/data', { headers: { 'Authorization': 'Bearer ' + data.token } });
-                if (!userRes.ok) throw new Error('Signed in, but could not load your data. Please reload.');
-                hydrateFromServer(await userRes.json());
-
-                if (currentWorkoutPlan) {
-                    renderPlan(currentWorkoutPlan);
-                    nav('screen-plan', 'nav-plan');
-                } else {
-                    nav('screen-onboarding');
-                }
+                await completeSignIn(data.token);
             } catch(e) {
                 alert(e.message);
             }

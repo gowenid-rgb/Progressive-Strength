@@ -53,7 +53,8 @@ function baseCtx(store, extra) {
 
 /* ------------------------------------------------------------------ T1-1 */
 
-function sessionHarness(initialStore, serverData) {
+function sessionHarness(initialStore, serverData, mode) {
+    mode = mode || {};
     const store = new Map(Object.entries(initialStore));
     const calls = [];
     let bootHandler = null;
@@ -63,7 +64,17 @@ function sessionHarness(initialStore, serverData) {
             const method = (opts && opts.method) || 'GET';
             const headers = (opts && opts.headers) || {};
             calls.push({ url, method, headers, body: opts && opts.body });
-            if (url === '/api/user/data' && method === 'GET') return { ok: true, json: async () => serverData };
+            // Cloudflare Access sign-in: a 404 unless the test turns that mode on.
+            if (url === '/api/auth/cloudflare') {
+                return mode.cloudflare
+                    ? { ok: true, status: 200, json: async () => ({ token: 'TOKEN-CF', user: { id: 3 } }) }
+                    : { ok: false, status: 404, json: async () => ({ error: 'Not found' }) };
+            }
+            if (url === '/api/user/data' && method === 'GET') {
+                const bearer = String(headers.Authorization || '');
+                if (mode.rejectTokens && mode.rejectTokens.some(x => bearer.endsWith(x))) return { ok: false, status: 401, json: async () => ({}) };
+                return { ok: true, json: async () => serverData };
+            }
             if (url.startsWith('/api/auth/')) return { ok: true, json: async () => ({ token: 'TOKEN-B', user: { id: 2 } }) };
             return { ok: true, json: async () => ({ success: true }) };
         },
@@ -151,6 +162,23 @@ async function testSessionLifecycle() {
     check('no-token boot clears leftover journal', t.store.get('workoutJournal'), undefined);
     check('no-token boot clears leftover reflections', t.store.get('journalEntries'), undefined);
     check('sent to auth screen', t.log.nav, 'screen-auth');
+    check('a failed Cloudflare attempt leaves the login screen as before', t.calls.filter(c => c.url === '/api/auth/cloudflare').length, 1);
+
+    // Behind Cloudflare Access: no saved token, but Access vouches for the visitor.
+    t = sessionHarness({}, { currentPlan: { planName: 'CF-PLAN', days: [] }, workoutJournal: [] }, { cloudflare: true });
+    await t.boot();
+    check('Cloudflare sign-in saves the app token', t.store.get('token'), 'TOKEN-CF');
+    check('and loads the account data', JSON.parse(t.store.get('currentWorkoutPlan')).planName, 'CF-PLAN');
+    check('and goes straight to the plan', t.log.nav, 'screen-plan');
+
+    // A saved token the server now rejects is retried through Cloudflare before giving up.
+    t = sessionHarness({ token: 'STALE' }, { currentPlan: { planName: 'CF-PLAN', days: [] }, workoutJournal: [] },
+        { cloudflare: true, rejectTokens: ['STALE'] });
+    await t.boot();
+    check('a rejected token is replaced via Cloudflare', t.store.get('token'), 'TOKEN-CF');
+    t = sessionHarness({ token: 'STALE' }, {}, { rejectTokens: ['STALE'] });
+    await t.boot();
+    check('without Cloudflare a rejected token still ends at login', [t.store.get('token'), t.log.nav], [undefined, 'screen-auth']);
 
     // User B logs in on a browser still holding user A's data.
     t = sessionHarness(

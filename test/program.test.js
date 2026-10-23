@@ -9,11 +9,12 @@
  */
 process.env.JWT_SECRET = 'program-test-secret-long-enough-to-avoid-warnings';
 process.env.DATABASE_URL = 'postgres://test/test';
-process.env.GEMINI_API_KEY = 'test-key-not-used';
+process.env.AI_PROVIDER = 'claude';
 process.env.AI_BURST_MAX = '999';
 process.env.AUTH_MAX = '999';
 
 const path = require('path');
+const { stubAI } = require('./helpers/aistub');
 const http = require('http');
 const { installPgShim, makeChecker } = require('./helpers/pgshim');
 
@@ -213,9 +214,7 @@ function session(name, sets) {
     console.log('\n=== end to end ===\n');
 
     const ai = require(path.join(ROOT, 'aiClient.js'));
-    ai.__setClientForTests({
-        interactions: { create: async () => ({ output_text: JSON.stringify(PROGRAM) }) }
-    });
+    stubAI(ai, async () => JSON.stringify(PROGRAM));
 
     const realListen = http.Server.prototype.listen;
     await new Promise(resolve => {
@@ -254,9 +253,7 @@ function session(name, sets) {
 
     // Advancing renders from the programme with no model call.
     const before = { calls: 0 };
-    ai.__setClientForTests({
-        interactions: { create: async () => { before.calls++; return { output_text: JSON.stringify(PROGRAM) }; } }
-    });
+    stubAI(ai, async () => { before.calls++; return JSON.stringify(PROGRAM); });
     const adv = await req('POST', '/api/cycle/advance', {}, token);
     check('advance succeeds', adv.status, 200);
     check('week 2 comes back already rendered', adv.body.plan.week, 2);

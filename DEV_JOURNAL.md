@@ -1728,3 +1728,42 @@ there is an optional "Cloudflare Access sign-in" mode.
   matching account (403, nothing created), mode off (404, sign-up works), mode on (sign-up 403),
   key caching and rotation. `test/tier1.test.js` gained boot cases for the front-end path.
 - No migrations and no database changes.
+
+### 2026-10-22 — AI features switched from Gemini to Claude
+
+The app now runs on the owner's laptop, which is signed in to their Claude subscription, so every
+AI feature uses the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`) and that existing login.
+There is no API key. `@google/genai` is gone.
+
+- **`aiClient.js`** keeps its public functions and the three safety layers. Layer 1 is now the
+  JSON schema in the prompt text plus a system prompt that demands only that object (there is no
+  `response_format`). Layers 2 and 3 are unchanged: `extractJsonObject`, then a validator with
+  one retry. The SDK is ESM, so it is loaded with a cached dynamic `import()`. `query()` is
+  called with `model` from `CLAUDE_MODEL` (default `claude-sonnet-5-5`), no tools
+  (`allowedTools: []` and every built-in tool in `disallowedTools`), `maxTurns: 1`,
+  `settingSources: []` and `persistSession: false`. The text comes from the final `result`
+  message; `is_error`, a non-success subtype or a missing result is a failure the retry layer
+  handles. Each call has a 120 second timeout (AbortController plus a race, because a stalled
+  stream does not end when aborted).
+- **Windows binary guard.** `claudeBinary.js` (same idea as home-assistant's
+  `src/claude-binary.js`): if `claude-agent-sdk-win32-x64/claude.exe` is missing but a
+  `claude.exe.old.<n>` exists, copy the newest back. Run once at startup when AI is on; it logs a
+  clear message if it cannot fix it.
+- **Feature check.** The six `GEMINI_API_KEY` 500s in `server.js` became one helper,
+  `aiAvailable()`, true only when `AI_PROVIDER=claude` (default off). Without it the AI routes
+  answer 500 "AI features are off on this server (set AI_PROVIDER=claude on a machine signed in
+  to Claude)." instead of hanging. The Gemini-only `/api/models` debug route and the `GEMINI_*`
+  config are removed; `AI_PROVIDER` and `CLAUDE_MODEL` are documented in `.env.example` and
+  `CLAUDE.md`.
+- **Prompts and validators** for generate-program, generate-plan, recalibrate-plan,
+  weekly-review, generate-recap and recommend-cycle-length are unchanged.
+- **Rate limits still apply** (`AI_BURST_MAX`, `AI_DAILY_MAX`) and every call now counts against
+  the owner's Claude plan, not a Gemini key.
+- **Tests.** `test/aiclient.test.js` stubs the SDK's `query` (an async generator ending in a
+  `result` message, via `test/helpers/aistub.js`): clean JSON, JSON in prose, invalid then valid,
+  invalid twice, `is_error`, no result, timeout. `test/aioff.test.js` proves every AI route returns
+  the "AI features are off" 500 when `AI_PROVIDER` is unset (and spends no model call), and tests
+  the binary guard. The other suites that stub the model now use the same helper.
+- Checked against the real thing: recommend-cycle-length took about 6 seconds and
+  generate-program about 11 seconds through the signed-in Claude.
+- No migrations, no database changes, and the Cloudflare sign-in is untouched.

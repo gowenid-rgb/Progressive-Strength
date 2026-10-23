@@ -1,6 +1,6 @@
 // Loads .env and hard-fails on missing required vars. Must come first: every module
 // below assumes process.env is already populated.
-require('./config');
+const config = require('./config');
 // Local test mode only (LOCAL_DB=1): must run before db.js loads `pg`.
 if (process.env.LOCAL_DB === '1') require('./dev/localDb').install();
 const express = require('express');
@@ -19,6 +19,18 @@ const adjust = require('./adjust');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
 const { aiLimiters, authLimiter } = require('./rateLimits');
+
+// The AI features run on the machine's own signed-in Claude (see aiClient.js), so they are
+// off unless this server is told it is on such a machine. Hosts without a Claude login get a
+// clear message instead of a request that hangs.
+const AI_OFF_MESSAGE = 'AI features are off on this server (set AI_PROVIDER=claude on a machine signed in to Claude).';
+function aiAvailable() {
+    return config.AI_PROVIDER === 'claude';
+}
+if (aiAvailable()) {
+    const problem = require('./claudeBinary').ensureClaudeBinary();
+    if (problem) console.error(problem);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -327,8 +339,8 @@ app.post('/api/cycle/substitutions', authenticateToken, async (req, res) => {
 // alternative is making someone guess at periodisation before they have trained once.
 app.post('/api/recommend-cycle-length', authenticateToken, aiLimiters, async (req, res) => {
     try {
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        if (!aiAvailable()) {
+            return res.status(500).json({ error: AI_OFF_MESSAGE });
         }
 
         const { primaryGoal, experienceLevel, trainingDays, extraDetails } = req.body;
@@ -371,8 +383,8 @@ Return the number of weeks and one short sentence explaining why, addressed to t
 // after this are arithmetic, not a fresh improvisation wearing a phase label.
 app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res) => {
     try {
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        if (!aiAvailable()) {
+            return res.status(500).json({ error: AI_OFF_MESSAGE });
         }
 
         const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails } = req.body || {};
@@ -597,8 +609,8 @@ app.post('/api/generate-plan', authenticateToken, aiLimiters, async (req, res) =
     try {
         const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails, workoutHistory, journalEntries } = req.body;
 
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        if (!aiAvailable()) {
+            return res.status(500).json({ error: AI_OFF_MESSAGE });
         }
 
         // Week and cycle length come from the active cycle when there is one, so generating
@@ -705,8 +717,8 @@ app.post('/api/recalibrate-plan', authenticateToken, aiLimiters, async (req, res
     try {
         const { currentPlan, feedback, workoutHistory } = req.body;
 
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        if (!aiAvailable()) {
+            return res.status(500).json({ error: AI_OFF_MESSAGE });
         }
 
         // The plan being adjusted is itself the strongest naming anchor: whatever the model
@@ -851,8 +863,8 @@ app.get('/api/weekly-review', authenticateToken, async (req, res) => {
 
 app.post('/api/weekly-review', authenticateToken, aiLimiters, async (req, res) => {
     try {
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        if (!aiAvailable()) {
+            return res.status(500).json({ error: AI_OFF_MESSAGE });
         }
         const ctx = await loadReviewContext(req.user.id);
         if (!ctx.cycle) return res.status(400).json({ error: 'Start a cycle and log a workout first.' });
@@ -885,8 +897,8 @@ app.post('/api/generate-recap', authenticateToken, aiLimiters, async (req, res) 
     try {
         const { workoutHistory } = req.body;
 
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ error: 'GEMINI_API_KEY is missing on the server.' });
+        if (!aiAvailable()) {
+            return res.status(500).json({ error: AI_OFF_MESSAGE });
         }
 
         const prompt = `You are an expert AI strength and conditioning coach.
@@ -920,30 +932,6 @@ Schema requirement:
         console.error('Error generating recap:', error);
         res.status(500).json({ error: error.message || 'Failed to generate recap' });
     }
-});
-
-// Endpoint to list available models for debugging
-app.get('/api/models', authenticateToken, (req, res) => {
-    // Debug aid only. It was previously unauthenticated, which let anyone enumerate the
-    // models this key can reach. Behind auth now, and OFF unless explicitly in development --
-    // fail closed, because we cannot rely on NODE_ENV being set in every environment.
-    if (process.env.NODE_ENV !== 'development') {
-        return res.status(404).json({ error: 'Not found' });
-    }
-    const https = require('https');
-    https.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${process.env.GEMINI_API_KEY}`, (apiRes) => {
-        let data = '';
-        apiRes.on('data', (chunk) => { data += chunk; });
-        apiRes.on('end', () => {
-            try {
-                res.json(JSON.parse(data));
-            } catch (err) {
-                res.status(500).json({ error: 'Failed to parse JSON' });
-            }
-        });
-    }).on("error", (err) => {
-        res.status(500).json({ error: err.message });
-    });
 });
 
 // Must precede the SPA catch-all: an unknown API route should be an honest 404, not an

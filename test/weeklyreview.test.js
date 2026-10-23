@@ -11,12 +11,13 @@
  */
 process.env.JWT_SECRET = 'weeklyreview-test-secret-long-enough-to-avoid-warnings';
 process.env.DATABASE_URL = 'postgres://test/test';
-process.env.GEMINI_API_KEY = 'test-key-not-used';
+process.env.AI_PROVIDER = 'claude';
 process.env.AI_BURST_MAX = '100';
 process.env.AI_DAILY_MAX = '100';
 process.env.AUTH_MAX = '100';
 
 const path = require('path');
+const { stubAI } = require('./helpers/aistub');
 const http = require('http');
 const { installPgShim, makeChecker } = require('./helpers/pgshim');
 const ROOT = path.join(__dirname, '..');
@@ -199,7 +200,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     const ai = require(path.join(ROOT, 'aiClient.js'));
     const calls = [];
     let respond = () => GOOD;
-    ai.__setClientForTests({ interactions: { create: async r => { calls.push(r); return { output_text: JSON.stringify(respond()) }; } } });
+    stubAI(ai, async r => { calls.push(r); return JSON.stringify(respond()); });
 
     const realListen = http.Server.prototype.listen;
     await new Promise(resolve => {
@@ -250,7 +251,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     r = await req('POST', '/api/weekly-review', {}, token);
     check('generating succeeds', r.status, 200);
     check('one model call', calls.length, 1);
-    const sent = calls[0].input;
+    const sent = calls[0].prompt;
     check('the coach was sent the lifter\'s journal', sent.includes('Left shoulder felt tight on pressing.'), true);
     check('and the record the server found', sent.includes('"weight": 140'), true);
     check('the review is returned', [r.body.review.headline, r.body.review.focus.length], [GOOD.headline, 1]);

@@ -36,10 +36,12 @@ if (JWT_SECRET.length < 32) {
 
 module.exports = {
     JWT_SECRET,
-    // These two keep their existing optional semantics: the server warns and runs
-    // without a database, and the AI routes return a clear 500 when the key is absent.
+    // Optional: the server warns and runs without a database.
     DATABASE_URL: process.env.DATABASE_URL,
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    // AI features run on the machine's own signed-in Claude (Claude Agent SDK, no API key).
+    // Off unless AI_PROVIDER=claude, so a host with no Claude login says so plainly.
+    get AI_PROVIDER() { return process.env.AI_PROVIDER; },
+    get CLAUDE_MODEL() { return process.env.CLAUDE_MODEL; },
     PORT: process.env.PORT || 3000,
 
     // Optional Cloudflare Access sign-in (see cfAccess.js). Both must be set to turn it on;

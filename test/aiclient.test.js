@@ -1,13 +1,14 @@
 /*
  * T2-1 — model response handling.
  *
- * Injects a stub client, so every case runs with no API key and no network. Each malformed
+ * Stubs the Claude Agent SDK's query(), so every case runs with no login and no network. Each malformed
  * response below either 500'd the old code or, worse, was accepted and persisted.
  */
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-long-enough-to-avoid-the-warning';
 
 const path = require('path');
 const ai = require(path.join(__dirname, '..', 'aiClient.js'));
+const { stubAI } = require('./helpers/aistub');
 
 let pass = 0, fail = 0;
 function check(label, actual, expected) {
@@ -22,22 +23,11 @@ const VALID_PLAN = {
     days: [{ dayName: 'Push', exercises: [{ name: 'Bench Press', sets: 3, reps: '5' }] }]
 };
 
-// Returns a stub whose successive calls yield the given payloads. A payload may be a string
-// (becomes output_text) or an Error (thrown).
+// Returns the calls the stub receives. Successive payloads answer successive calls; a payload
+// may be a string (the model text), an Error (thrown), or one of the shapes in helpers/aistub.
 function stub(...payloads) {
-    const calls = [];
     let i = 0;
-    ai.__setClientForTests({
-        interactions: {
-            create: async req => {
-                calls.push(req);
-                const p = payloads[Math.min(i++, payloads.length - 1)];
-                if (p instanceof Error) throw p;
-                return { output_text: p };
-            }
-        }
-    });
-    return calls;
+    return stubAI(ai, async () => payloads[Math.min(i++, payloads.length - 1)], { timeoutMs: 400 });
 }
 
 const planArgs = extra => Object.assign({
@@ -84,12 +74,28 @@ const planArgs = extra => Object.assign({
     check('valid recap passes', ai.validateRecap({ recapTitle: 'T', recapMessage: 'M' }), null);
     check('recap missing message rejected', ai.validateRecap({ recapTitle: 'T' }), 'missing recapMessage');
 
-    console.log('\n=== T2-1: generateJSON end to end ===\n');
+    console.log('\n=== generateJSON end to end ===\n');
 
     let calls = stub(J);
     check('returns the parsed plan', (await ai.generateJSON(planArgs())).planName, 'Base Cycle');
-    check('sends response_format with the schema', calls[0].response_format.mime_type, 'application/json');
-    check('response_format carries the schema', calls[0].response_format.schema.required, ['planName', 'days']);
+    check('the schema is in the prompt', calls[0].prompt.includes('"required":["planName","days"]'), true);
+    check('the original prompt is kept', calls[0].prompt.startsWith('p\n'), true);
+    check('uses the default model', calls[0].options.model, 'claude-sonnet-5-5');
+    check('no tools are allowed', calls[0].options.allowedTools, []);
+    check('the dangerous ones are named as disallowed',
+        ['Bash', 'Read', 'Write', 'Edit', 'WebFetch'].every(t => calls[0].options.disallowedTools.includes(t)), true);
+    check('one turn only', calls[0].options.maxTurns, 1);
+    check('no settings files are loaded', calls[0].options.settingSources, []);
+    check('a system prompt demands only the JSON', /only a single JSON object/.test(calls[0].options.systemPrompt), true);
+
+    process.env.CLAUDE_MODEL = 'claude-test-model';
+    calls = stub(J);
+    await ai.generateJSON(planArgs());
+    check('CLAUDE_MODEL overrides the model', calls[0].options.model, 'claude-test-model');
+    delete process.env.CLAUDE_MODEL;
+
+    calls = stub('Sure! Here is your plan:\n```json\n' + J + '\n```\nEnjoy!');
+    check('JSON wrapped in prose still parses', (await ai.generateJSON(planArgs())).planName, 'Base Cycle');
 
     // First response is junk, second is good: must retry rather than 500.
     calls = stub('I am unable to produce that.', J);
@@ -102,35 +108,48 @@ const planArgs = extra => Object.assign({
     check('validation retry made 2 calls', calls.length, 2);
 
     // Both attempts bad: must throw a descriptive error, not undefined.
-    stub('nope', 'still nope');
+    calls = stub('nope', 'still nope');
     let err = null;
     try { await ai.generateJSON(planArgs()); } catch (e) { err = e.message; }
     check('gives up after 2 attempts with a clear error', /No JSON object found/.test(err), true);
+    check('and stopped at 2 calls', calls.length, 2);
 
-    // Missing output_text must not become undefined deep inside JSON.parse.
-    ai.__setClientForTests({ interactions: { create: async () => ({ id: 'x' }) } });
+    console.log('\n=== failures from Claude itself ===\n');
+
+    calls = stub({ isError: true, text: 'rate limited' }, J);
+    check('an is_error result is retried', (await ai.generateJSON(planArgs())).planName, 'Base Cycle');
+    check('after exactly one retry', calls.length, 2);
+
+    stub({ isError: true, text: 'not signed in' });
     err = null;
     try { await ai.generateJSON(planArgs()); } catch (e) { err = e.message; }
-    check('empty response gives a clear error', err, 'Model returned no text output');
+    check('a persistent is_error surfaces its reason', err, 'Claude reported an error: not signed in');
 
-    console.log('\n=== T2-1: response_format fallback ===\n');
-
-    // If the API rejects response_format, degrade to a plain call rather than failing.
-    const rejection = new Error('Unknown field: response_format');
-    rejection.status = 400;
-    calls = stub(rejection, J);
-    const out = await ai.generateJSON(planArgs());
-    check('falls back and still returns a plan', out.planName, 'Base Cycle');
-    check('first call included response_format', 'response_format' in calls[0], true);
-    check('fallback call omitted response_format', 'response_format' in calls[1], false);
-
-    // Non-shape errors must propagate, not be swallowed by the fallback.
-    const outage = new Error('503 Service Unavailable');
-    outage.status = 503;
-    stub(outage);
+    stub({ noResult: true });
     err = null;
     try { await ai.generateJSON(planArgs()); } catch (e) { err = e.message; }
-    check('a real API outage still surfaces', err, '503 Service Unavailable');
+    check('a stream with no result is an error', err, 'Claude returned no result');
+
+    stub('   ');
+    err = null;
+    try { await ai.generateJSON(planArgs()); } catch (e) { err = e.message; }
+    check('an empty answer is an error', err, 'Model returned no text output');
+
+    stub(new Error('spawn claude ENOENT'));
+    err = null;
+    try { await ai.generateJSON(planArgs()); } catch (e) { err = e.message; }
+    check('a real outage still surfaces', err, 'spawn claude ENOENT');
+
+    calls = stub({ hang: true }, J);
+    const started = Date.now();
+    check('a call that never answers times out and is retried', (await ai.generateJSON(planArgs())).planName, 'Base Cycle');
+    check('the timeout was the short test one', Date.now() - started < 5000, true);
+    check('the hung call was aborted', calls[0].options.abortController.signal.aborted, true);
+
+    stub({ hang: true });
+    err = null;
+    try { await ai.generateJSON(planArgs()); } catch (e) { err = e.message; }
+    check('repeated timeouts give a clear error', /did not answer within/.test(err), true);
 
     console.log('\n' + (fail === 0 ? 'ALL PASS' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed\n');
     process.exit(fail === 0 ? 0 : 1);

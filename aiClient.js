@@ -1,4 +1,7 @@
-// Gemini access for the three generation endpoints.
+// Claude access for the generation endpoints.
+//
+// Uses the Claude Agent SDK, which runs the machine's own signed-in Claude (no API key). The
+// SDK is ESM, so it is loaded with a cached dynamic import() from this CommonJS file.
 //
 // Previously each endpoint inlined its own call and did:
 //     if (text.startsWith('```json')) text = text.replace(...)
@@ -8,39 +11,48 @@
 // A syntactically valid object missing `days` was accepted and persisted as the user's plan.
 //
 // Three layers now, outermost first:
-//   1. response_format asks the API to guarantee schema-conforming JSON, removing the
-//      problem at source rather than cleaning up after it.
+//   1. the prompt carries the JSON schema and the system prompt demands only that object,
+//      removing the problem at source rather than cleaning up after it.
 //   2. extractJsonObject finds the first balanced {...} regardless of surrounding text,
-//      for the case where layer 1 is unavailable or ignored.
+//      for the case where layer 1 is ignored.
 //   3. a validator rejects structurally valid but useless responses, and one retry follows.
-const { GoogleGenAI } = require('@google/genai');
-const { GEMINI_API_KEY } = require('./config');
+const config = require('./config');
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const DEFAULT_MODEL = 'claude-sonnet-5-5';
+const DEFAULT_TIMEOUT_MS = 120 * 1000;
 
-let client = null;
-// Set to false permanently if the API rejects the response_format field, so a single
-// unsupported request does not cost every later call an extra round trip.
-let responseFormatSupported = true;
+// Every built-in tool is switched off: this is a text-in, JSON-out call, and a model that can
+// run Bash or read files has no business in a request handler.
+const DISALLOWED_TOOLS = ['Bash', 'BashOutput', 'KillShell', 'Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit',
+    'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Task', 'Agent', 'TodoWrite', 'ExitPlanMode'];
 
-function getClient() {
-    if (!client) client = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-    return client;
+const SYSTEM_PROMPT = 'You return only a single JSON object that conforms to the JSON schema given in the user message. '
+    + 'No markdown fences, no commentary before or after, no tool use.';
+
+let sdkPromise = null;
+let queryOverride = null;
+let timeoutMs = DEFAULT_TIMEOUT_MS;
+
+function modelName() {
+    return process.env.CLAUDE_MODEL || DEFAULT_MODEL;
 }
 
-// Test seam: inject a stub client and reset the capability flag.
-function __setClientForTests(stub) {
-    client = stub;
-    responseFormatSupported = true;
+async function getQuery() {
+    if (queryOverride) return queryOverride;
+    if (!sdkPromise) sdkPromise = import('@anthropic-ai/claude-agent-sdk');
+    const sdk = await sdkPromise;
+    return sdk.query;
 }
 
-// The SDK returns concatenated model text on `output_text` (snake_case). Earlier code read
-// `outputText || output_text || text`; the first and third never exist on this type, so an
-// SDK change would have produced undefined and thrown deep inside JSON.parse.
-function readModelText(response) {
-    const text = response && response.output_text;
+// Test seams: inject a stand-in for the SDK's query() (an async generator of messages), and
+// shorten the per-call timeout.
+function __setQueryForTests(fn, opts) {
+    queryOverride = fn;
+    timeoutMs = (opts && opts.timeoutMs) || DEFAULT_TIMEOUT_MS;
+}
+
+function readModelText(text) {
     if (typeof text !== 'string' || text.trim() === '') {
-        console.error('Unexpected model response shape. Keys:', Object.keys(response || {}));
         throw new Error('Model returned no text output');
     }
     return text;
@@ -81,34 +93,56 @@ function extractJsonObject(text) {
 }
 
 async function callModel(prompt, schema) {
-    const request = { model: MODEL, input: prompt };
+    const query = await getQuery();
+    const fullPrompt = schema
+        ? prompt + '\n\nReturn ONLY a JSON object that conforms to this JSON schema:\n' + JSON.stringify(schema)
+        : prompt;
 
-    if (schema && responseFormatSupported) {
-        request.response_format = { type: 'text', mime_type: 'application/json', schema };
-    }
+    const abort = new AbortController();
+    let timer;
+    const timedOut = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            abort.abort();
+            reject(new Error('Claude did not answer within ' + Math.round(timeoutMs / 1000) + ' seconds'));
+        }, timeoutMs);
+    });
+
+    const stream = query({
+        prompt: fullPrompt,
+        options: {
+            model: modelName(),
+            systemPrompt: SYSTEM_PROMPT,
+            allowedTools: [],
+            disallowedTools: DISALLOWED_TOOLS,
+            maxTurns: 1,
+            settingSources: [],
+            persistSession: false,
+            abortController: abort
+        }
+    });
+    const iterator = stream[Symbol.asyncIterator]();
+
+    const readResult = (async () => {
+        let result = null;
+        for (;;) {
+            const step = await iterator.next();
+            if (step.done) break;
+            if (step.value && step.value.type === 'result') result = step.value;
+        }
+        if (!result) throw new Error('Claude returned no result');
+        if (result.is_error || (result.subtype && result.subtype !== 'success')) {
+            throw new Error('Claude reported an error: ' + (typeof result.result === 'string' && result.result ? result.result : result.subtype || 'unknown'));
+        }
+        return result.result;
+    })();
 
     try {
-        return await getClient().interactions.create(request);
-    } catch (err) {
-        // If the API rejects the request because of response_format, degrade to a plain call
-        // rather than failing the user's request. Layers 2 and 3 still apply.
-        if (request.response_format && isRequestShapeError(err)) {
-            responseFormatSupported = false;
-            console.warn('response_format rejected by the API; falling back to prompt-only JSON.', err.message);
-            return await getClient().interactions.create({ model: MODEL, input: prompt });
-        }
-        throw err;
+        return await Promise.race([readResult, timedOut]);
+    } finally {
+        clearTimeout(timer);
+        readResult.catch(() => {});
+        try { if (iterator.return) iterator.return().catch(() => {}); } catch (e) { /* already finished */ }
     }
-}
-
-function isRequestShapeError(err) {
-    const msg = String((err && err.message) || '').toLowerCase();
-    const status = err && (err.status || err.code);
-    if (status === 400 || status === 'INVALID_ARGUMENT') return true;
-    return msg.includes('response_format')
-        || msg.includes('unknown field')
-        || msg.includes('invalid argument')
-        || msg.includes('unrecognized');
 }
 
 /**
@@ -124,8 +158,7 @@ async function generateJSON({ prompt, schema, validate, label }) {
 
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-            const response = await callModel(prompt, schema);
-            const text = readModelText(response);
+            const text = readModelText(await callModel(prompt, schema));
 
             const raw = extractJsonObject(text);
             if (!raw) {
@@ -245,6 +278,6 @@ module.exports = {
     validateRecap,
     PLAN_SCHEMA,
     RECAP_SCHEMA,
-    MODEL,
-    __setClientForTests
+    modelName,
+    __setQueryForTests
 };

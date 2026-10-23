@@ -7,13 +7,14 @@
  */
 process.env.JWT_SECRET = 'adjust-test-secret-long-enough-to-avoid-warnings';
 process.env.DATABASE_URL = 'postgres://test/test';
-process.env.GEMINI_API_KEY = 'test';
+process.env.AI_PROVIDER = 'claude';
 process.env.AI_BURST_MAX = '100';
 process.env.AUTH_MAX = '100';
 
 const path = require('path');
 const http = require('http');
 const { installPgShim, makeChecker } = require('./helpers/pgshim');
+const { stubAI } = require('./helpers/aistub');
 const ROOT = path.join(__dirname, '..');
 const { check, report } = makeChecker();
 const adjust = require(path.join(ROOT, 'adjust.js'));
@@ -114,7 +115,7 @@ const ex = (name, sets, reps) => ({ name, sets, reps: reps || '5' });
     console.log('\n=== end to end: adjusting never touches logged data ===\n');
     const ai = require(path.join(ROOT, 'aiClient.js'));
     let nextAnswer = PROGRAM;
-    ai.__setClientForTests({ interactions: { create: async () => ({ output_text: JSON.stringify(nextAnswer) }) } });
+    stubAI(ai, async () => JSON.stringify(nextAnswer));
 
     const realListen = http.Server.prototype.listen;
     await new Promise(resolve => {

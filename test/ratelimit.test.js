@@ -40,7 +40,7 @@ function request(port, method, p, headers) {
     process.env.AI_DAILY_MAX = '100';
     process.env.AUTH_MAX = '4';
     delete process.env.DATABASE_URL;
-    delete process.env.GEMINI_API_KEY;
+    process.env.AI_PROVIDER = ''; // empty, not deleted: dotenv would fill it in from .env
 
     const jwt = require(path.join(ROOT, 'node_modules', 'jsonwebtoken'));
     const tokenFor = id => jwt.sign({ id, email: 'u' + id + '@x.com' }, process.env.JWT_SECRET, { expiresIn: '1h' });
@@ -110,19 +110,15 @@ function request(port, method, p, headers) {
     check('non-API route still serves the SPA', spa.status, 200);
     check('SPA response is HTML', spa.headers['content-type'].includes('text/html'), true);
 
-    console.log('\n=== T2-4: debug model route is gated ===\n');
+    console.log('\n=== the Gemini model-listing debug route is gone ===\n');
 
+    // It listed Gemini models and no longer has a reason to exist. It must not answer, whether
+    // or not the caller is signed in, and whatever NODE_ENV says.
     const modelsAnon = await request(port, 'GET', '/api/models', {});
-    check('/api/models rejects anonymous callers', modelsAnon.status, 401);
-
-    // Fails closed: with NODE_ENV unset (as it may be in any environment), the route is off.
-    delete process.env.NODE_ENV;
-    const modelsDefault = await request(port, 'GET', '/api/models', authB);
-    check('/api/models is 404 when NODE_ENV is unset', modelsDefault.status, 404);
-
-    process.env.NODE_ENV = 'production';
-    const modelsProd = await request(port, 'GET', '/api/models', authB);
-    check('/api/models is 404 in production even when authed', modelsProd.status, 404);
+    check('/api/models does not exist for anonymous callers', modelsAnon.status, 404);
+    process.env.NODE_ENV = 'development';
+    const modelsDev = await request(port, 'GET', '/api/models', authB);
+    check('/api/models does not exist in development either', modelsDev.status, 404);
     delete process.env.NODE_ENV;
 
     console.log('\n' + (fail === 0 ? 'ALL PASS' : 'FAILURES') + ': ' + pass + ' passed, ' + fail + ' failed\n');

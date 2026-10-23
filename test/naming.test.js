@@ -12,11 +12,12 @@
  */
 process.env.JWT_SECRET = 'naming-test-secret-long-enough-to-avoid-warnings';
 process.env.DATABASE_URL = 'postgres://test/test';
-process.env.GEMINI_API_KEY = 'test-key-not-used';
+process.env.AI_PROVIDER = 'claude';
 process.env.AI_BURST_MAX = '999';
 process.env.AUTH_MAX = '999';
 
 const path = require('path');
+const { stubAI } = require('./helpers/aistub');
 const http = require('http');
 const { installPgShim, makeChecker } = require('./helpers/pgshim');
 
@@ -54,11 +55,7 @@ function req(method, p, body, token) {
         planName: 'Week', week: 1,
         days: [{ dayName: 'Pull', exercises: [{ name: 'Deadlift', sets: 3, reps: '5' }] }]
     });
-    ai.__setClientForTests({
-        interactions: {
-            create: async r => { prompts.push(r.input); return { output_text: reply }; }
-        }
-    });
+    stubAI(ai, async ({ prompt }) => { prompts.push(prompt); return reply; });
 
     const realListen = http.Server.prototype.listen;
     await new Promise(resolve => {

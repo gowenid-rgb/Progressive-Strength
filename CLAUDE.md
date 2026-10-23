@@ -12,7 +12,8 @@ The local `.env` (gitignored, never commit or print it) contains:
 - `LOCAL_DB=1` - swaps Postgres for a file-backed PGlite database in `.devdata/` (gitignored), so no Postgres
   install is needed. Data persists between restarts; delete `.devdata/` to reset. Code: `dev/localDb.js`.
   Inert on Railway (the variable isn't set there).
-- `GEMINI_API_KEY` - needed for the AI endpoints (generate/modify workouts). Without it they return a 500.
+- `AI_PROVIDER=claude` - turns the AI endpoints on. They use the Claude this laptop is signed in to (Claude
+  Agent SDK, no API key). Without it they return a 500 saying AI features are off. `CLAUDE_MODEL` is optional.
 
 Test account, created automatically on start: `test@example.com` / `testpass123`
 (override with `TEST_EMAIL` / `TEST_PASSWORD`).

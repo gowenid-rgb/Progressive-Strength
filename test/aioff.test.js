@@ -6,7 +6,8 @@ process.env.DATABASE_URL = 'postgres://test/test';
 process.env.AUTH_MAX = '1000';
 process.env.AI_BURST_MAX = '1000';
 process.env.AI_DAILY_MAX = '1000';
-delete process.env.AI_PROVIDER;
+// Empty rather than deleted: dotenv fills in unset variables from a developer's .env.
+process.env.AI_PROVIDER = '';
 
 const fs = require('fs');
 const os = require('os');

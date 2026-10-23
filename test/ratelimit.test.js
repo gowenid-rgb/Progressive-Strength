@@ -40,7 +40,7 @@ function request(port, method, p, headers) {
     process.env.AI_DAILY_MAX = '100';
     process.env.AUTH_MAX = '4';
     delete process.env.DATABASE_URL;
-    delete process.env.AI_PROVIDER;
+    process.env.AI_PROVIDER = ''; // empty, not deleted: dotenv would fill it in from .env
 
     const jwt = require(path.join(ROOT, 'node_modules', 'jsonwebtoken'));
     const tokenFor = id => jwt.sign({ id, email: 'u' + id + '@x.com' }, process.env.JWT_SECRET, { expiresIn: '1h' });

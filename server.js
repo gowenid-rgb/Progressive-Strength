@@ -391,6 +391,9 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
 
         const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails } = req.body || {};
         const totalWeeks = cycles.clampWeeks(req.body && req.body.totalWeeks);
+        // How many day entries the programme must have: the week the lifter asked for.
+        // Only enforced when the lifter said; older clients may not send it.
+        const days = Number(trainingDays) >= 1 ? Math.min(7, Math.round(Number(trainingDays))) : null;
 
         // The last cycles and the journal are the brief for this one. "You stalled on bench in
         // week 4" and "my shoulder hurt" are the things a coach would actually design around.
@@ -458,13 +461,18 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
             '7. Give every movement a "role": warmup (mobility, activation, anything done to prepare',
             '   rather than to progress), main (the primary compound lifts), accessory, core, or',
             '   conditioning (cardio, intervals, sled work). Warm-ups are not progressed week to week',
-            '   and are always exactly ONE set (baseSets: 1).'
+            '   and are always exactly ONE set (baseSets: 1).',
+            '8. Return ' + (days ? 'exactly ' + days + ' entries' : 'one entry per training day') + ' in "days", one for each training day of the week, even',
+            '   if two of them repeat the same workout. The app shows one entry per training day.',
+            '9. If the notes or journal mention an injury or a sore joint, leave out movements that load',
+            '   it (for a sore knee: no lunges, split squats, step-ups or jumping) and say so in the rationale.'
         ].join('\n');
 
         const designed = await generateJSON({
             prompt,
             schema: program.PROGRAM_SCHEMA,
-            validate: p => program.validateProgram(p, totalWeeks),
+            validate: p => program.validateProgram(p, totalWeeks)
+                || (days && Array.isArray(p.days) && p.days.length !== days ? `asked for ${days} days, got ${p.days.length}` : null),
             label: 'generate-program'
         });
 

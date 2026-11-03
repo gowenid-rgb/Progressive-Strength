@@ -1784,3 +1784,7 @@ Goal: move the AI features from Claude to the local model on the Halo box, but p
   no `.env`, random localhost port, three invented lifters, every AI route, must/should checks,
   plus a model-offline check. Reports go to `scripts/ai-sandbox/results/` (gitignored).
 - **Tests:** `test/aiclient-local.test.js` against a fake OpenAI server on 127.0.0.1.
+- **After the first sandbox runs** (Flash-Next, 55/55 calls worked): 1 in 9 programmes had fewer
+  days than asked, and 1 in 9 gave the sore-knee lifter a lunge. generate-program now asks for
+  exactly the requested number of day entries and spells out leaving injured joints alone; a
+  wrong day count fails validation, so it is retried rather than saved. Applies to Claude too.

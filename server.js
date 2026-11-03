@@ -17,6 +17,7 @@ const { buildReviewFacts, buildReviewPrompt, validateReview, normaliseReview, RE
 const program = require('./program');
 const adjust = require('./adjust');
 const injuryGuard = require('./injuryGuard');
+const { asyncable, jobStatus } = require('./aiJobs');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
 const { aiLimiters, authLimiter } = require('./rateLimits');
@@ -360,7 +361,7 @@ app.post('/api/cycle/substitutions', authenticateToken, async (req, res) => {
 
 // Recommends a cycle length for users who pick "Not sure". A small, cheap call: the
 // alternative is making someone guess at periodisation before they have trained once.
-app.post('/api/recommend-cycle-length', authenticateToken, aiLimiters, async (req, res) => {
+app.post('/api/recommend-cycle-length', authenticateToken, aiLimiters, asyncable(async (req, res) => {
     try {
         if (!aiAvailable()) {
             return res.status(500).json({ error: AI_OFF_MESSAGE });
@@ -397,14 +398,14 @@ Return the number of weeks and one short sentence explaining why, addressed to t
         console.error('Error recommending cycle length:', error);
         res.status(500).json({ error: error.message || 'Failed to recommend a cycle length' });
     }
-});
+}));
 
 // Designs a whole programme, then renders week 1 from it.
 //
 // This replaces generating a week at a time. The model is asked for the ARC -- the split, the
 // movements, the progression rule, and what each week is for -- exactly once per cycle. Weeks
 // after this are arithmetic, not a fresh improvisation wearing a phase label.
-app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res) => {
+app.post('/api/generate-program', authenticateToken, aiLimiters, asyncable(async (req, res) => {
     try {
         if (!aiAvailable()) {
             return res.status(500).json({ error: AI_OFF_MESSAGE });
@@ -534,7 +535,7 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
         console.error('Error generating programme:', error);
         res.status(500).json({ error: error.message || 'Failed to design the programme' });
     }
-});
+}));
 
 // Sets whether one movement is judged on progress in the active cycle. The programme assigns
 // a default from the movement's role (warm-ups are not progressed); this is the lifter's
@@ -638,7 +639,7 @@ app.post('/api/cycle/advance', authenticateToken, async (req, res) => {
 });
 
 // Endpoint to generate a workout plan
-app.post('/api/generate-plan', authenticateToken, aiLimiters, async (req, res) => {
+app.post('/api/generate-plan', authenticateToken, aiLimiters, asyncable(async (req, res) => {
     try {
         const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails, workoutHistory, journalEntries } = req.body;
 
@@ -741,10 +742,10 @@ Schema requirement:
         console.error('Error generating plan:', error);
         res.status(500).json({ error: error.message || 'Failed to generate plan' });
     }
-});
+}));
 
 // Endpoint to recalibrate an existing workout plan
-app.post('/api/recalibrate-plan', authenticateToken, aiLimiters, async (req, res) => {
+app.post('/api/recalibrate-plan', authenticateToken, aiLimiters, asyncable(async (req, res) => {
     try {
         const { currentPlan, feedback, workoutHistory } = req.body;
 
@@ -840,7 +841,7 @@ Schema requirement:
         console.error('Error recalibrating plan:', error);
         res.status(500).json({ error: error.message || 'Failed to recalibrate plan' });
     }
-});
+}));
 
 // The weekly coach review.
 //
@@ -892,7 +893,7 @@ app.get('/api/weekly-review', authenticateToken, async (req, res) => {
     }
 });
 
-app.post('/api/weekly-review', authenticateToken, aiLimiters, async (req, res) => {
+app.post('/api/weekly-review', authenticateToken, aiLimiters, asyncable(async (req, res) => {
     try {
         if (!aiAvailable()) {
             return res.status(500).json({ error: AI_OFF_MESSAGE });
@@ -921,10 +922,10 @@ app.post('/api/weekly-review', authenticateToken, aiLimiters, async (req, res) =
         console.error('Weekly review failed:', err);
         res.status(500).json({ error: 'Your coach could not write this review. Please try again in a moment.' });
     }
-});
+}));
 
 // Endpoint to generate a weekly recap
-app.post('/api/generate-recap', authenticateToken, aiLimiters, async (req, res) => {
+app.post('/api/generate-recap', authenticateToken, aiLimiters, asyncable(async (req, res) => {
     try {
         const { workoutHistory } = req.body;
 
@@ -963,7 +964,10 @@ Schema requirement:
         console.error('Error generating recap:', error);
         res.status(500).json({ error: error.message || 'Failed to generate recap' });
     }
-});
+}));
+
+// Polled by clients that asked for an AI answer as a background job (see aiJobs.js).
+app.get('/api/ai-jobs/:id', authenticateToken, jobStatus);
 
 // Must precede the SPA catch-all: an unknown API route should be an honest 404, not an
 // HTML document that the client fails to parse and reports as a network error.

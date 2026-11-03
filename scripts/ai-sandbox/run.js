@@ -14,7 +14,7 @@
  *   node scripts/ai-sandbox/run.js                       local model, 3 rounds
  *   node scripts/ai-sandbox/run.js --runs 1              quick smoke test
  *   node scripts/ai-sandbox/run.js --url http://100.118.229.5:8080/v1 --model <id>
- *   node scripts/ai-sandbox/run.js --json-mode schema    try constrained JSON decoding
+ *   node scripts/ai-sandbox/run.js --json-mode off       no constrained JSON decoding (app default: schema)
  *   node scripts/ai-sandbox/run.js --provider claude     same tests on Claude, for comparison
  *
  * Writes scripts/ai-sandbox/results/<time>-<provider>.md (readable) and .json (every answer).
@@ -38,7 +38,7 @@ const URL_BASE = opt('url', 'http://100.118.229.5:8080/v1').replace(/\/+$/, '');
 const MODEL = opt('model', '');
 const JSON_MODE = opt('json-mode', '');
 const ONLY = opt('only', '');
-const TIMEOUT_S = Number(opt('timeout', 180));
+const TIMEOUT_S = Number(opt('timeout', 240)); // the app's own default for the local model
 
 const ROOT = path.join(__dirname, '..', '..');
 const OUT_DIR = path.join(__dirname, 'results');
@@ -60,7 +60,7 @@ Object.assign(process.env, {
     AUTH_MAX: '100000',
     LOCAL_AI_URL: URL_BASE,
     LOCAL_AI_MODEL: MODEL,
-    LOCAL_AI_JSON_MODE: JSON_MODE,
+    LOCAL_AI_JSON_MODE: JSON_MODE, // empty = the app default (schema)
     NODE_ENV: 'sandbox'
 });
 
@@ -321,7 +321,7 @@ function summarise(meta) { // eslint-disable-line
     const lines = [];
     lines.push('# AI sandbox results: ' + meta.provider + (meta.model ? ' (' + meta.model + ')' : ''));
     lines.push('');
-    lines.push(`Run ${meta.started} for ${meta.minutes} minutes. ${meta.runs} round(s) x ${LIFTERS.length} invented lifters. Server: ${meta.provider === 'local' ? URL_BASE : 'Claude'}${JSON_MODE ? ', JSON mode ' + JSON_MODE : ''}.`);
+    lines.push(`Run ${meta.started} for ${meta.minutes} minutes. ${meta.runs} round(s) x ${LIFTERS.length} invented lifters. Server: ${meta.provider === 'local' ? URL_BASE : 'Claude'}${PROVIDER === 'local' ? ', JSON mode ' + (JSON_MODE || 'schema') : ''}.`);
     lines.push('');
     lines.push(`**Overall: ${totalOk} of ${totalN} calls worked**${totalOk === totalN ? ' (no hard failures)' : ' (' + (totalN - totalOk) + ' failed)'}. "Clean" means every quality check passed too.`);
     lines.push('');

@@ -22,6 +22,6 @@ What the checks look for:
   avoiding lunges and jumps for a sore knee, keeping movement names when adjusting a plan, counting
   workouts correctly in the recap.
 
-Options: `--runs N` (default 3), `--url`, `--model`, `--json-mode json|schema` (constrained decoding),
-`--only recommend,review,recap,adjust,plan`, `--timeout SECONDS` (default 180),
+Options: `--runs N` (default 3), `--url`, `--model`, `--json-mode schema|json|off` (constrained decoding; the app defaults to schema),
+`--only recommend,review,recap,adjust,plan`, `--timeout SECONDS` (default 240, same as the app),
 `--provider claude` (same tests on Claude, as a baseline; uses the Claude plan).

@@ -16,6 +16,7 @@ const { computeCycleSnapshot } = require('./cycleSnapshot');
 const { buildReviewFacts, buildReviewPrompt, validateReview, normaliseReview, REVIEW_SCHEMA } = require('./weeklyReview');
 const program = require('./program');
 const adjust = require('./adjust');
+const injuryGuard = require('./injuryGuard');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
 const { aiLimiters, authLimiter } = require('./rateLimits');
@@ -32,6 +33,26 @@ function aiAvailable() {
 if (config.AI_PROVIDER === 'claude') {
     const problem = require('./claudeBinary').ensureClaudeBinary();
     if (problem) console.error(problem);
+}
+
+// A generated plan that loads a joint the lifter says is hurt gets one more try with the
+// offending movements named; anything still left is dropped (never emptying a day). See
+// injuryGuard.js for why the prompt alone is not enough.
+async function guardInjuries(result, joints, args) {
+    let bad = injuryGuard.offendingMovements(result, joints);
+    if (!bad.length) return result;
+    console.warn(`[${args.label}] injury guard: ${bad.map(b => b.name + ' (' + b.joint + ')').join(', ')}; asking again`);
+    try {
+        const again = await generateJSON(Object.assign({}, args, {
+            prompt: args.prompt + '\n\nYOUR PREVIOUS ANSWER included movements that load an injured joint: '
+                + bad.map(b => '"' + b.name + '" (' + b.joint + ')').join(', ')
+                + '. Replace each of them with a movement that does not load that joint, and keep everything else the same.'
+        }));
+        result = again;
+    } catch (e) { /* keep the first answer and fall through to removal */ }
+    const removed = injuryGuard.removeOffending(result, joints);
+    if (removed.length) console.warn(`[${args.label}] injury guard removed: ${removed.join(', ')}`);
+    return result;
 }
 
 const app = express();
@@ -468,13 +489,15 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
             '   it (for a sore knee: no lunges, split squats, step-ups or jumping) and say so in the rationale.'
         ].join('\n');
 
-        const designed = await generateJSON({
+        const programArgs = {
             prompt,
             schema: program.PROGRAM_SCHEMA,
             validate: p => program.validateProgram(p, totalWeeks)
                 || (days && Array.isArray(p.days) && p.days.length !== days ? `asked for ${days} days, got ${p.days.length}` : null),
             label: 'generate-program'
-        });
+        };
+        const joints = injuryGuard.injuredJoints([extraDetails].concat(journal.map(j => j.entry)));
+        const designed = await guardInjuries(await generateJSON(programArgs), joints, programArgs);
 
         designed.totalWeeks = totalWeeks;
         program.normaliseRoles(designed);
@@ -702,12 +725,10 @@ Schema requirement:
   ]
 }`;
 
-        const plan = await generateJSON({
-            prompt,
-            schema: PLAN_SCHEMA,
-            validate: validatePlan,
-            label: 'generate-plan'
-        });
+        const planArgs = { prompt, schema: PLAN_SCHEMA, validate: validatePlan, label: 'generate-plan' };
+        const planJoints = injuryGuard.injuredJoints([extraDetails].concat(
+            Array.isArray(journalEntries) ? journalEntries.map(j => (j && (j.entry || j.note || j.text)) || (typeof j === 'string' ? j : '')) : []));
+        const plan = await guardInjuries(await generateJSON(planArgs), planJoints, planArgs);
 
         // Authoritative, not advisory: the week is ours to decide, not the model's.
         plan.week = weekNumber;

@@ -37,6 +37,15 @@ const SYSTEM_PROMPT = 'You return only a single JSON object that conforms to the
 let sdkPromise = null;
 let queryOverride = null;
 let timeoutMs = DEFAULT_TIMEOUT_MS;
+let timeoutSetByTest = false;
+// The local model is several times slower than Claude (about a minute for a programme in the
+// sandbox), and a retry doubles that, so it gets a longer limit.
+const DEFAULT_LOCAL_TIMEOUT_S = 240;
+function localTimeoutMs() {
+    if (timeoutSetByTest) return timeoutMs;
+    const s = Number(process.env.LOCAL_AI_TIMEOUT_S);
+    return (Number.isFinite(s) && s > 0 ? s : DEFAULT_LOCAL_TIMEOUT_S) * 1000;
+}
 
 function modelName() {
     if (process.env.AI_PROVIDER === 'local') return process.env.LOCAL_AI_MODEL || localModelCache || 'local';
@@ -59,6 +68,7 @@ function __setQueryForTests(fn, opts) {
 
 function __setTimeoutForTests(ms) {
     timeoutMs = ms || DEFAULT_TIMEOUT_MS;
+    timeoutSetByTest = !!ms;
     localModelCache = null;
 }
 
@@ -130,8 +140,9 @@ async function localModelName(base) {
 
 async function callLocal(fullPrompt, schema) {
     const base = (process.env.LOCAL_AI_URL || DEFAULT_LOCAL_URL).replace(/\/+$/, '');
+    const limitMs = localTimeoutMs();
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), timeoutMs);
+    const timer = setTimeout(() => abort.abort(), limitMs);
     try {
         const model = await localModelName(base);
         const body = {
@@ -146,8 +157,9 @@ async function callLocal(fullPrompt, schema) {
             // Qwen-style templates: answer directly, no reasoning pass.
             chat_template_kwargs: { enable_thinking: false }
         };
-        // Optional constrained decoding. "json" forces a JSON object, "schema" forces this schema.
-        const mode = process.env.LOCAL_AI_JSON_MODE;
+        // Constrained decoding: "schema" (default) forces this schema, "json" any JSON object, "off"
+        // relies on the prompt alone. The sandbox saw empty plan days only with it off.
+        const mode = process.env.LOCAL_AI_JSON_MODE || 'schema';
         if (mode === 'json') body.response_format = { type: 'json_object' };
         if (mode === 'schema' && schema) body.response_format = { type: 'json_schema', json_schema: { name: 'answer', schema } };
 
@@ -166,7 +178,7 @@ async function callLocal(fullPrompt, schema) {
         return stripThinking(msg && typeof msg.content === 'string' ? msg.content : '');
     } catch (err) {
         if (err && err.name === 'AbortError') {
-            throw new Error('The local AI did not answer within ' + Math.round(timeoutMs / 1000) + ' seconds');
+            throw new Error('The local AI did not answer within ' + Math.round(limitMs / 1000) + ' seconds');
         }
         throw err;
     } finally {

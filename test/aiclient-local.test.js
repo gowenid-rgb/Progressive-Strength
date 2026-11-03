@@ -49,7 +49,7 @@ const server = http.createServer((req, res) => {
     check('the schema is in the prompt', requests[0].messages[1].content.includes('"planName"'), true);
     check('the system prompt demands JSON only', /only a single JSON object/.test(requests[0].messages[0].content), true);
     check('thinking is switched off', requests[0].chat_template_kwargs.enable_thinking, false);
-    check('no constrained decoding by default', requests[0].response_format, undefined);
+    check('schema-constrained decoding by default', requests[0].response_format && requests[0].response_format.type, 'json_schema');
 
     replies = ['<think>maybe {"days": []} would do</think>\nHere you go: ' + VALID];
     check('a thinking block with braces is skipped', (await ai.generateJSON(planArgs())).planName, 'Base');
@@ -70,12 +70,12 @@ const server = http.createServer((req, res) => {
     check('a call that never answers times out', /did not answer within/.test(err || ''), true);
     check('the timeout was the short test one', Date.now() - t0 < 5000, true);
 
-    process.env.LOCAL_AI_JSON_MODE = 'schema';
+    process.env.LOCAL_AI_JSON_MODE = 'off';
     process.env.LOCAL_AI_MODEL = 'named-model';
     replies = [VALID]; requests = [];
     await ai.generateJSON(planArgs());
     check('LOCAL_AI_MODEL is used when set', requests[0].model, 'named-model');
-    check('schema mode sends the schema', requests[0].response_format.type, 'json_schema');
+    check('"off" sends no response_format', requests[0].response_format, undefined);
 
     check('stripThinking leaves plain text alone', ai.stripThinking('{"a":1}'), '{"a":1}');
 

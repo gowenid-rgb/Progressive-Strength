@@ -1788,3 +1788,17 @@ Goal: move the AI features from Claude to the local model on the Halo box, but p
   days than asked, and 1 in 9 gave the sore-knee lifter a lunge. generate-program now asks for
   exactly the requested number of day entries and spells out leaving injured joints alone; a
   wrong day count fails validation, so it is retried rather than saved. Applies to Claude too.
+
+### Fixes from the sandbox results (2026-11-03)
+
+- **Injury guard** (`injuryGuard.js`): when the notes or journal mention a knee, shoulder or lower
+  back problem, generate-program and generate-plan check the answer for movements that load that
+  joint (knee: lunges, split squats, step-ups, jumps...). If any are there, the model is asked once
+  more with those names spelled out; anything still left is removed, never emptying a day. The
+  sandbox showed the prompt alone was not enough: "knee-safe" plans still had step-ups about 1 in 5
+  times. Deliberately cautious: "no knee pain" also turns the knee guard on.
+- **Local model defaults:** `LOCAL_AI_JSON_MODE` now defaults to `schema` (no empty plan days in
+  schema runs, 2 in 18 without), and the local model gets 240 seconds per answer
+  (`LOCAL_AI_TIMEOUT_S`) since a programme takes about a minute and a retry doubles that.
+- **Waiting text:** the programme and adjust buttons now say "this can take a minute".
+- Tests: `test/injuryguard.test.js`.

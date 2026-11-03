@@ -195,8 +195,8 @@ async function runLifter(lifter, run) {
         pc.push(ck('only dumbbell / bodyweight movements', bad.length === 0, false, bad.join(', ')));
     }
     if (lifter.kneeCare) {
-        const bad = progNames.filter(n => /lunge|jump|plyo|box jump|bound/i.test(n));
-        pc.push(ck('avoids lunges and jumping (sore knee)', bad.length === 0, false, bad.join(', ')));
+        const bad = progNames.filter(n => /lunge|jump|plyo|bound|step[- ]?up|split squat/i.test(n));
+        pc.push(ck('avoids lunges, step-ups, split squats and jumping (sore knee)', bad.length === 0, false, bad.join(', ')));
     }
     record('generate-program', lifter, run, p, pc);
     if (p.status !== 200 || !week1) return; // nothing to train from

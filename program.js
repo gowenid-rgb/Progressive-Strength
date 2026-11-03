@@ -252,6 +252,7 @@ const PROGRAM_SCHEMA = {
                     focus: { type: 'string' },
                     exercises: {
                         type: 'array',
+                        minItems: 1,
                         items: {
                             type: 'object',
                             properties: {

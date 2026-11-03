@@ -258,7 +258,10 @@ async function generateJSON({ prompt, schema, validate, label }) {
 
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-            const text = readModelText(await callModel(prompt, schema));
+            // A retry with the same prompt tends to get the same answer back, so it says what was wrong.
+            const ask = attempt === 1 || !lastError ? prompt
+                : prompt + '\n\nYOUR PREVIOUS ANSWER WAS REJECTED: ' + lastError.message + '. Fix that in this answer.';
+            const text = readModelText(await callModel(ask, schema));
 
             const raw = extractJsonObject(text);
             if (!raw) {
@@ -307,12 +310,13 @@ const PLAN_SCHEMA = {
         week: { type: 'integer' },
         days: {
             type: 'array',
+            minItems: 1,
             items: {
                 type: 'object',
                 properties: {
                     dayName: { type: 'string' },
                     workoutIntro: { type: 'string' },
-                    exercises: { type: 'array', items: EXERCISE_SCHEMA }
+                    exercises: { type: 'array', minItems: 1, items: EXERCISE_SCHEMA }
                 },
                 required: ['dayName', 'exercises']
             }

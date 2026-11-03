@@ -73,10 +73,10 @@ for (const k of ['warn', 'error']) {
 const { installPgShim } = require(path.join(ROOT, 'test', 'helpers', 'pgshim'));
 
 let PORT = null;
-function call(method, p, body, token, timeoutMs) {
+function call(method, p, body, token, timeoutMs, extraHeaders) {
     return new Promise(resolve => {
         const payload = body === undefined ? null : JSON.stringify(body);
-        const headers = { 'Content-Type': 'application/json' };
+        const headers = Object.assign({ 'Content-Type': 'application/json' }, extraHeaders || {});
         if (payload) headers['Content-Length'] = Buffer.byteLength(payload);
         if (token) headers.Authorization = 'Bearer ' + token;
         const t0 = Date.now();
@@ -93,6 +93,22 @@ function call(method, p, body, token, timeoutMs) {
         if (payload) r.write(payload);
         r.end();
     });
+}
+
+// AI routes the way the phone calls them: start a background job, then poll for the answer.
+// Time is measured from the first request to the answer, as the lifter would wait.
+async function aiCall(p, body, token, timeoutMs) {
+    const t0 = Date.now();
+    const first = await call('POST', p, body, token, 30000, { Prefer: 'respond-async' });
+    if (first.status !== 202) return Object.assign(first, { seconds: (Date.now() - t0) / 1000 });
+    const limit = t0 + (timeoutMs || 600000);
+    while (Date.now() < limit) {
+        await new Promise(r => setTimeout(r, 1000));
+        const poll = await call('GET', '/api/ai-jobs/' + first.body.jobId, undefined, token, 30000);
+        if (poll.status !== 200) return Object.assign(poll, { seconds: (Date.now() - t0) / 1000 });
+        if (poll.body.status === 'done') return { status: poll.body.code, body: poll.body.body, seconds: (Date.now() - t0) / 1000 };
+    }
+    return { status: 0, body: { error: 'sandbox gave up waiting for the job' }, seconds: (Date.now() - t0) / 1000 };
 }
 
 /* ----------------------------------------------------------- invented lifters */
@@ -158,7 +174,7 @@ async function runLifter(lifter, run) {
 
     // 1. Recommend a cycle length
     if (want('recommend')) {
-        const r = await call('POST', '/api/recommend-cycle-length', lifter.profile, token, timeout);
+        const r = await aiCall('/api/recommend-cycle-length', lifter.profile, token, timeout);
         const b = r.body || {};
         record('recommend-cycle-length', lifter, run, r, r.status !== 200 ? [] : [
             ck('weeks is a whole number from 2 to 12', Number.isInteger(b.weeks) && b.weeks >= 2 && b.weeks <= 12, true, 'got ' + b.weeks),
@@ -169,7 +185,7 @@ async function runLifter(lifter, run) {
     }
 
     // 2. Design a 6-week programme (also creates the cycle the later steps need)
-    const p = await call('POST', '/api/generate-program', Object.assign({ totalWeeks: 6 }, lifter.profile), token, timeout);
+    const p = await aiCall('/api/generate-program', Object.assign({ totalWeeks: 6 }, lifter.profile), token, timeout);
     const prog = (p.body && p.body.program) || {};
     const week1 = (p.body && p.body.plan) || null;
     const progNames = names(prog);
@@ -221,7 +237,7 @@ async function runLifter(lifter, run) {
 
     // 3. Weekly review
     if (want('review')) {
-        const r = await call('POST', '/api/weekly-review', {}, token, timeout);
+        const r = await aiCall('/api/weekly-review', {}, token, timeout);
         const rv = (r.body && r.body.review) || {};
         const words = textOf([rv.headline, rv.summary, rv.wins, rv.watch, rv.focus]);
         const rc = r.status !== 200 ? [] : [
@@ -238,7 +254,7 @@ async function runLifter(lifter, run) {
     // 4. Recap
     if (want('recap')) {
         const hist = (await call('GET', '/api/workouts', undefined, token)).body;
-        const r = await call('POST', '/api/generate-recap', { workoutHistory: hist && hist.workouts }, token, timeout);
+        const r = await aiCall('/api/generate-recap', { workoutHistory: hist && hist.workouts }, token, timeout);
         const b = r.body || {};
         record('generate-recap', lifter, run, r, r.status !== 200 ? [] : [
             ck('has a title and message', b.recapTitle && b.recapMessage, true),
@@ -253,7 +269,7 @@ async function runLifter(lifter, run) {
         const day0 = week1.days[0];
         const target = day0.exercises.find(e => !/warm|stretch|mobility|walk|bike|rower|row erg/i.test(e.name)) || day0.exercises[0];
         const feedback = `Please swap ${target.name} for a different exercise that works the same muscles. Keep everything else exactly the same.`;
-        const r = await call('POST', '/api/recalibrate-plan', { currentPlan: week1, feedback }, token, timeout);
+        const r = await aiCall('/api/recalibrate-plan', { currentPlan: week1, feedback }, token, timeout);
         const plan = (r.body && (r.body.plan || r.body.updatedPlan || (r.body.days ? r.body : null))) || {};
         const before = names(week1).filter(n => n !== target.name);
         const after = names(plan);
@@ -268,7 +284,7 @@ async function runLifter(lifter, run) {
 
     // 6. Older single-week generator (still a live route)
     if (want('plan')) {
-        const r = await call('POST', '/api/generate-plan', Object.assign({}, lifter.profile), token, timeout);
+        const r = await aiCall('/api/generate-plan', Object.assign({}, lifter.profile), token, timeout);
         const b = r.body || {};
         const ex = allExercises(b);
         record('generate-plan', lifter, run, r, r.status !== 200 ? [] : [
@@ -294,7 +310,7 @@ async function failSafe() {
     const logMark = appLog.length;
     process.env.LOCAL_AI_URL = 'http://127.0.0.1:' + (await freePort()) + '/v1';
     const reg = await call('POST', '/api/auth/register', { email: 'sandbox-off-' + Date.now() + '@example.invalid', password: 'x'.repeat(16) });
-    const r = await call('POST', '/api/recommend-cycle-length', LIFTERS[0].profile, reg.body.token, 60000);
+    const r = await aiCall('/api/recommend-cycle-length', LIFTERS[0].profile, reg.body.token, 60000);
     process.env.LOCAL_AI_URL = saved;
     appLog.splice(logMark).forEach(l => appLog.push('[offline test] ' + l.replace(/attempt (\d)\/2 failed/, 'try $1 failed')));
     const lifter = { key: 'offline' };

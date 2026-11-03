@@ -1802,3 +1802,20 @@ Goal: move the AI features from Claude to the local model on the Halo box, but p
   (`LOCAL_AI_TIMEOUT_S`) since a programme takes about a minute and a retry doubles that.
 - **Waiting text:** the programme and adjust buttons now say "this can take a minute".
 - Tests: `test/injuryguard.test.js`.
+
+## 2026-11-03 — AI answers as background jobs (Cloudflare 524)
+
+Cloudflare closes any request that has not answered in 100 seconds (error 524). On the local model a
+programme takes about 65-80 seconds and up to 142 when the injury guard asks again, so through
+progress.gowen-ailab.com some would fail on the phone while the server still finished and saved
+them; tapping again would then design a second programme.
+
+- `aiJobs.js`: the six AI routes are wrapped in `asyncable()`. A request with
+  `Prefer: respond-async` gets 202 `{ jobId }` straight away; the handler runs in the background
+  against a recording stand-in for `res`, and `GET /api/ai-jobs/:id` (same user only) returns
+  `{ status: 'running' }` or `{ status: 'done', code, body }`. Jobs are kept in memory for 15
+  minutes; a restart loses running jobs (the phone then shows an error and can retry).
+- Requests without the header behave exactly as before, so an old cached page still works.
+- `public/index.html`: `aiFetch()` sends the header, polls every 3 seconds and hands back a normal
+  `Response`, so the button code did not change beyond the call.
+- The sandbox now calls the AI routes the same way. Test: `test/aijobs.test.js`.

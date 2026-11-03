@@ -416,6 +416,36 @@
     </div>
 
     <script>
+
+        // AI answers can take longer than Cloudflare's 100-second limit on one request (error 524),
+        // so they run as a background job on the server and this polls for the result. It returns
+        // a Response, so callers use it exactly like fetch(). Servers without job support answer
+        // directly and that answer is passed straight through.
+        async function aiFetch(url, opts) {
+            const o = Object.assign({}, opts);
+            o.headers = Object.assign({}, o.headers, { 'Prefer': 'respond-async' });
+            const first = await fetch(url, o);
+            if (first.status !== 202) return first;
+            const { jobId } = await first.json();
+            const auth = { 'Authorization': (o.headers && o.headers.Authorization) || ('Bearer ' + localStorage.getItem('token')) };
+            const started = Date.now();
+            let misses = 0;
+            while (Date.now() - started < 10 * 60 * 1000) {
+                await new Promise(r => setTimeout(r, 3000));
+                let poll;
+                try { poll = await fetch('/api/ai-jobs/' + encodeURIComponent(jobId), { headers: auth }); }
+                catch (e) { if (++misses > 10) throw e; continue; } // a dropped connection mid-wait is not the answer
+                if (!poll.ok) {
+                    if (poll.status >= 500 && ++misses <= 10) continue;
+                    return poll;
+                }
+                const j = await poll.json();
+                if (j.status === 'done') {
+                    return new Response(JSON.stringify(j.body), { status: j.code || 200, headers: { 'Content-Type': 'application/json' } });
+                }
+            }
+            throw new Error('Your coach is taking too long. Please try again in a moment.');
+        }
         let currentWorkoutPlan = null;
         let currentCycle = null;   // { id, totalWeeks, currentWeek, phases: [{week, phase, label}] }
         let activeDayIndex = 0;
@@ -444,7 +474,7 @@
             btn.innerHTML = 'Thinking...';
             btn.disabled = true;
             try {
-                const res = await fetch('/api/recommend-cycle-length', {
+                const res = await aiFetch('/api/recommend-cycle-length', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify({
@@ -1939,7 +1969,7 @@
             };
 
             try {
-                const response = await fetch('/api/generate-program', {
+                const response = await aiFetch('/api/generate-program', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify(payload)
@@ -1998,7 +2028,7 @@
             btn.disabled = true;
 
             try {
-                const response = await fetch('/api/recalibrate-plan', {
+                const response = await aiFetch('/api/recalibrate-plan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: JSON.stringify({ currentPlan: currentWorkoutPlan, feedback, workoutHistory: JSON.parse(localStorage.getItem('workoutJournal') || '[]') })
@@ -2146,7 +2176,7 @@
             reviewError = null;
             renderWeeklyReview();
             try {
-                const res = await fetch('/api/weekly-review', {
+                const res = await aiFetch('/api/weekly-review', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                     body: '{}'

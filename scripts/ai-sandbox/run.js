@@ -323,7 +323,7 @@ function summarise(meta) { // eslint-disable-line
     lines.push('');
     lines.push(`Run ${meta.started} for ${meta.minutes} minutes. ${meta.runs} round(s) x ${LIFTERS.length} invented lifters. Server: ${meta.provider === 'local' ? URL_BASE : 'Claude'}${JSON_MODE ? ', JSON mode ' + JSON_MODE : ''}.`);
     lines.push('');
-    lines.push(`**Overall: ${totalOk} of ${totalN} calls worked** (no hard failures). "Clean" means every quality check passed too.`);
+    lines.push(`**Overall: ${totalOk} of ${totalN} calls worked**${totalOk === totalN ? ' (no hard failures)' : ' (' + (totalN - totalOk) + ' failed)'}. "Clean" means every quality check passed too.`);
     lines.push('');
     lines.push('| Feature | Worked | Clean | Avg time | Slowest |');
     lines.push('|---|---|---|---|---|');

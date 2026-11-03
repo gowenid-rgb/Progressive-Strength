@@ -16,6 +16,7 @@ const { computeCycleSnapshot } = require('./cycleSnapshot');
 const { buildReviewFacts, buildReviewPrompt, validateReview, normaliseReview, REVIEW_SCHEMA } = require('./weeklyReview');
 const program = require('./program');
 const adjust = require('./adjust');
+const injuryGuard = require('./injuryGuard');
 const authRoutes = require('./authRoutes');
 const { authenticateToken } = require('./middleware');
 const { aiLimiters, authLimiter } = require('./rateLimits');
@@ -24,12 +25,34 @@ const { aiLimiters, authLimiter } = require('./rateLimits');
 // off unless this server is told it is on such a machine. Hosts without a Claude login get a
 // clear message instead of a request that hangs.
 const AI_OFF_MESSAGE = 'AI features are off on this server (set AI_PROVIDER=claude on a machine signed in to Claude).';
+// AI_PROVIDER=local points the same features at a model on the home network instead
+// (see aiClient.js); it is only meant for the sandbox until the switch-over is decided.
 function aiAvailable() {
-    return config.AI_PROVIDER === 'claude';
+    return config.AI_PROVIDER === 'claude' || config.AI_PROVIDER === 'local';
 }
-if (aiAvailable()) {
+if (config.AI_PROVIDER === 'claude') {
     const problem = require('./claudeBinary').ensureClaudeBinary();
     if (problem) console.error(problem);
+}
+
+// A generated plan that loads a joint the lifter says is hurt gets one more try with the
+// offending movements named; anything still left is dropped (never emptying a day). See
+// injuryGuard.js for why the prompt alone is not enough.
+async function guardInjuries(result, joints, args) {
+    let bad = injuryGuard.offendingMovements(result, joints);
+    if (!bad.length) return result;
+    console.warn(`[${args.label}] injury guard: ${bad.map(b => b.name + ' (' + b.joint + ')').join(', ')}; asking again`);
+    try {
+        const again = await generateJSON(Object.assign({}, args, {
+            prompt: args.prompt + '\n\nYOUR PREVIOUS ANSWER included movements that load an injured joint: '
+                + bad.map(b => '"' + b.name + '" (' + b.joint + ')').join(', ')
+                + '. Replace each of them with a movement that does not load that joint, and keep everything else the same.'
+        }));
+        result = again;
+    } catch (e) { /* keep the first answer and fall through to removal */ }
+    const removed = injuryGuard.removeOffending(result, joints);
+    if (removed.length) console.warn(`[${args.label}] injury guard removed: ${removed.join(', ')}`);
+    return result;
 }
 
 const app = express();
@@ -389,6 +412,9 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
 
         const { primaryGoal, experienceLevel, equipment, trainingDays, extraDetails } = req.body || {};
         const totalWeeks = cycles.clampWeeks(req.body && req.body.totalWeeks);
+        // How many day entries the programme must have: the week the lifter asked for.
+        // Only enforced when the lifter said; older clients may not send it.
+        const days = Number(trainingDays) >= 1 ? Math.min(7, Math.round(Number(trainingDays))) : null;
 
         // The last cycles and the journal are the brief for this one. "You stalled on bench in
         // week 4" and "my shoulder hurt" are the things a coach would actually design around.
@@ -456,15 +482,22 @@ app.post('/api/generate-program', authenticateToken, aiLimiters, async (req, res
             '7. Give every movement a "role": warmup (mobility, activation, anything done to prepare',
             '   rather than to progress), main (the primary compound lifts), accessory, core, or',
             '   conditioning (cardio, intervals, sled work). Warm-ups are not progressed week to week',
-            '   and are always exactly ONE set (baseSets: 1).'
+            '   and are always exactly ONE set (baseSets: 1).',
+            '8. Return ' + (days ? 'exactly ' + days + ' entries' : 'one entry per training day') + ' in "days", one for each training day of the week, even',
+            '   if two of them repeat the same workout. The app shows one entry per training day.',
+            '9. If the notes or journal mention an injury or a sore joint, leave out movements that load',
+            '   it (for a sore knee: no lunges, split squats, step-ups or jumping) and say so in the rationale.'
         ].join('\n');
 
-        const designed = await generateJSON({
+        const programArgs = {
             prompt,
             schema: program.PROGRAM_SCHEMA,
-            validate: p => program.validateProgram(p, totalWeeks),
+            validate: p => program.validateProgram(p, totalWeeks)
+                || (days && Array.isArray(p.days) && p.days.length !== days ? `asked for ${days} days, got ${p.days.length}` : null),
             label: 'generate-program'
-        });
+        };
+        const joints = injuryGuard.injuredJoints([extraDetails].concat(journal.map(j => j.entry)));
+        const designed = await guardInjuries(await generateJSON(programArgs), joints, programArgs);
 
         designed.totalWeeks = totalWeeks;
         program.normaliseRoles(designed);
@@ -692,12 +725,10 @@ Schema requirement:
   ]
 }`;
 
-        const plan = await generateJSON({
-            prompt,
-            schema: PLAN_SCHEMA,
-            validate: validatePlan,
-            label: 'generate-plan'
-        });
+        const planArgs = { prompt, schema: PLAN_SCHEMA, validate: validatePlan, label: 'generate-plan' };
+        const planJoints = injuryGuard.injuredJoints([extraDetails].concat(
+            Array.isArray(journalEntries) ? journalEntries.map(j => (j && (j.entry || j.note || j.text)) || (typeof j === 'string' ? j : '')) : []));
+        const plan = await guardInjuries(await generateJSON(planArgs), planJoints, planArgs);
 
         // Authoritative, not advisory: the week is ours to decide, not the model's.
         plan.week = weekNumber;

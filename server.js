@@ -24,10 +24,12 @@ const { aiLimiters, authLimiter } = require('./rateLimits');
 // off unless this server is told it is on such a machine. Hosts without a Claude login get a
 // clear message instead of a request that hangs.
 const AI_OFF_MESSAGE = 'AI features are off on this server (set AI_PROVIDER=claude on a machine signed in to Claude).';
+// AI_PROVIDER=local points the same features at a model on the home network instead
+// (see aiClient.js); it is only meant for the sandbox until the switch-over is decided.
 function aiAvailable() {
-    return config.AI_PROVIDER === 'claude';
+    return config.AI_PROVIDER === 'claude' || config.AI_PROVIDER === 'local';
 }
-if (aiAvailable()) {
+if (config.AI_PROVIDER === 'claude') {
     const problem = require('./claudeBinary').ensureClaudeBinary();
     if (problem) console.error(problem);
 }

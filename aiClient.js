@@ -18,6 +18,11 @@
 //   3. a validator rejects structurally valid but useless responses, and one retry follows.
 const config = require('./config');
 
+// AI_PROVIDER=local sends the same prompts to a model on this network instead of Claude: any
+// server that speaks the OpenAI chat-completions protocol (llama.cpp, Lemonade, vLLM...). Same
+// three layers, same validators, same retry; only the transport differs.
+const DEFAULT_LOCAL_URL = 'http://100.118.229.5:8080/v1';
+
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const DEFAULT_TIMEOUT_MS = 120 * 1000;
 
@@ -34,6 +39,7 @@ let queryOverride = null;
 let timeoutMs = DEFAULT_TIMEOUT_MS;
 
 function modelName() {
+    if (process.env.AI_PROVIDER === 'local') return process.env.LOCAL_AI_MODEL || localModelCache || 'local';
     return process.env.CLAUDE_MODEL || DEFAULT_MODEL;
 }
 
@@ -49,6 +55,11 @@ async function getQuery() {
 function __setQueryForTests(fn, opts) {
     queryOverride = fn;
     timeoutMs = (opts && opts.timeoutMs) || DEFAULT_TIMEOUT_MS;
+}
+
+function __setTimeoutForTests(ms) {
+    timeoutMs = ms || DEFAULT_TIMEOUT_MS;
+    localModelCache = null;
 }
 
 function readModelText(text) {
@@ -92,7 +103,84 @@ function extractJsonObject(text) {
     return null; // unterminated — usually a truncated response
 }
 
+function provider() {
+    return process.env.AI_PROVIDER === 'local' ? 'local' : 'claude';
+}
+
+// Many local models think out loud in <think>...</think> before answering. That text can hold
+// braces, so it goes before extractJsonObject looks for the first one.
+function stripThinking(text) {
+    if (typeof text !== 'string') return text;
+    return text.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*?<\/think>/i, '');
+}
+
+let localModelCache = null;
+async function localModelName(base) {
+    if (process.env.LOCAL_AI_MODEL) return process.env.LOCAL_AI_MODEL;
+    if (localModelCache) return localModelCache;
+    // Unset means "whatever the server has loaded": ask it rather than guess a name.
+    const r = await fetch(base + '/models');
+    if (!r.ok) throw new Error('Local AI server did not list its models (HTTP ' + r.status + ')');
+    const j = await r.json();
+    const id = j && Array.isArray(j.data) && j.data[0] && j.data[0].id;
+    if (!id) throw new Error('Local AI server has no model loaded');
+    localModelCache = id;
+    return id;
+}
+
+async function callLocal(fullPrompt, schema) {
+    const base = (process.env.LOCAL_AI_URL || DEFAULT_LOCAL_URL).replace(/\/+$/, '');
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), timeoutMs);
+    try {
+        const model = await localModelName(base);
+        const body = {
+            model,
+            messages: [
+                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'user', content: fullPrompt }
+            ],
+            temperature: Number(process.env.LOCAL_AI_TEMPERATURE || 0.4),
+            max_tokens: Number(process.env.LOCAL_AI_MAX_TOKENS || 8192),
+            stream: false,
+            // Qwen-style templates: answer directly, no reasoning pass.
+            chat_template_kwargs: { enable_thinking: false }
+        };
+        // Optional constrained decoding. "json" forces a JSON object, "schema" forces this schema.
+        const mode = process.env.LOCAL_AI_JSON_MODE;
+        if (mode === 'json') body.response_format = { type: 'json_object' };
+        if (mode === 'schema' && schema) body.response_format = { type: 'json_schema', json_schema: { name: 'answer', schema } };
+
+        const r = await fetch(base + '/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: abort.signal
+        });
+        if (!r.ok) {
+            const detail = (await r.text().catch(() => '')).slice(0, 200);
+            throw new Error('Local AI server error (HTTP ' + r.status + ')' + (detail ? ': ' + detail : ''));
+        }
+        const j = await r.json();
+        const msg = j && j.choices && j.choices[0] && j.choices[0].message;
+        return stripThinking(msg && typeof msg.content === 'string' ? msg.content : '');
+    } catch (err) {
+        if (err && err.name === 'AbortError') {
+            throw new Error('The local AI did not answer within ' + Math.round(timeoutMs / 1000) + ' seconds');
+        }
+        throw err;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 async function callModel(prompt, schema) {
+    if (provider() === 'local') {
+        const fullPrompt = schema
+            ? prompt + '\n\nReturn ONLY a JSON object that conforms to this JSON schema:\n' + JSON.stringify(schema)
+            : prompt;
+        return callLocal(fullPrompt, schema);
+    }
     const query = await getQuery();
     const fullPrompt = schema
         ? prompt + '\n\nReturn ONLY a JSON object that conforms to this JSON schema:\n' + JSON.stringify(schema)
@@ -279,5 +367,7 @@ module.exports = {
     PLAN_SCHEMA,
     RECAP_SCHEMA,
     modelName,
-    __setQueryForTests
+    stripThinking,
+    __setQueryForTests,
+    __setTimeoutForTests
 };

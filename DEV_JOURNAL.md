@@ -1767,3 +1767,20 @@ There is no API key. `@google/genai` is gone.
 - Checked against the real thing: recommend-cycle-length took about 6 seconds and
   generate-program about 11 seconds through the signed-in Claude.
 - No migrations, no database changes, and the Cloudflare sign-in is untouched.
+
+## 2026-11-03 — Local model option and AI sandbox (no live change)
+
+Goal: move the AI features from Claude to the local model on the Halo box, but prove it first.
+
+- **`AI_PROVIDER=local`** in `aiClient.js` sends the same prompts to an OpenAI-compatible
+  chat-completions server (`LOCAL_AI_URL`, default the Halo at `http://100.118.229.5:8080/v1`;
+  `LOCAL_AI_MODEL` optional, otherwise the server's loaded model). Same three layers, validators and
+  single retry as Claude. `<think>` blocks are stripped before JSON extraction, thinking is asked to
+  be off, and `LOCAL_AI_JSON_MODE=json|schema` optionally turns on constrained decoding.
+  `aiAvailable()` accepts `local`; the Claude binary guard still only runs for `claude`.
+- The live laptop `.env` says `AI_PROVIDER=claude`, so this changes nothing there until someone
+  deliberately sets `local`.
+- **Sandbox:** `scripts/ai-sandbox/run.js` (see its README). Real app code, in-memory database,
+  no `.env`, random localhost port, three invented lifters, every AI route, must/should checks,
+  plus a model-offline check. Reports go to `scripts/ai-sandbox/results/` (gitignored).
+- **Tests:** `test/aiclient-local.test.js` against a fake OpenAI server on 127.0.0.1.
